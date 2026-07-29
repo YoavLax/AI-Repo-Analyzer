@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 
@@ -86,3 +86,38 @@ class ParsedDocument:
     @property
     def line_count(self) -> int:
         return len(self.raw_text.splitlines())
+
+
+class ArtifactKind(str, Enum):
+    """Every AI-agent artifact type the analyzer recognizes (plan-v2-fable.md §3.1)."""
+
+    SKILL = "skill"
+    ENTRYPOINT_COPILOT = "entrypoint_copilot"
+    ENTRYPOINT_CLAUDE = "entrypoint_claude"
+    AGENTS_MD = "agents_md"
+    INSTRUCTIONS = "instructions"
+    PROMPT = "prompt"
+    AGENT = "agent"
+    CLAUDE_RULE = "claude_rule"
+    HOOKS = "hooks"
+    MCP = "mcp"
+    CLAUDE_SETTINGS = "claude_settings"
+    CLAUDE_SETTINGS_LOCAL = "claude_settings_local"
+    CLAUDE_LOCAL_MD = "claude_local_md"
+
+
+@dataclass(frozen=True)
+class Artifact:
+    """One discovered AI-agent artifact.
+
+    Markdown artifacts carry a `doc`; JSON artifacts (hooks, MCP, settings)
+    carry `json_data`. A file that fails to decode or parse carries
+    `parse_error` instead of raising — rules report the failure.
+    """
+
+    kind: ArtifactKind
+    rel_path: PurePosixPath
+    platform: Platform
+    doc: ParsedDocument | None = None
+    json_data: Any | None = None
+    parse_error: str | None = None

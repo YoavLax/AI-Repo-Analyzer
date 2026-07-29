@@ -22,6 +22,9 @@ def test_repeated_runs_are_byte_identical():
     fixtures = [
         "repo_empty", "repo_good_skill", "repo_bad_skill", "repo_entrypoint_only",
         "repo_malformed_yaml", "repo_agentsmd_unbridged", "repo_near_perfect_one_error",
+        "repo_quality_rich", "repo_scoped_ok", "repo_scoped_missing_applyto",
+        "repo_agents_ok", "repo_agents_broken", "repo_verification_rich",
+        "repo_tooling_mcp", "repo_tooling_mcp_secret", "repo_safety_local_committed",
     ]
     for fixture in fixtures:
         runs = [_analyze_json(fixture) for _ in range(10)]

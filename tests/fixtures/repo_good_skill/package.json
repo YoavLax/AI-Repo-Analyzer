@@ -1,0 +1,10 @@
+{
+  "name": "contoso-deploy",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "build": "vite build",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  }
+}

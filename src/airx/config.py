@@ -105,3 +105,84 @@ repository with a silently-broken skill or a malformed config file is not
 
 ENTRYPOINT_MAX_LINES_HARD: int = 400
 ENTRYPOINT_IDEAL_LINES: tuple[int, int] = (30, 150)
+
+# --- v0.2.0: weight profiles (plan.md §6.1) ----------------------------------
+
+PROFILES: dict[str, dict[str, int]] = {
+    "standard": dict(PILLAR_WEIGHTS),
+    "minimal": {
+        "foundation": 35, "quality": 25, "scoping": 10, "skills": 0,
+        "agents": 0, "verification": 15, "tooling": 5, "safety": 10,
+    },
+    "enterprise": {
+        "foundation": 18, "quality": 12, "scoping": 10, "skills": 15,
+        "agents": 7, "verification": 18, "tooling": 5, "safety": 15,
+    },
+}
+# Each profile sums to 100. Weight 0 => pillar reported but not scored.
+
+# --- v0.2.0: quality-pillar thresholds (plan-v2-fable.md §4.3) ---------------
+
+MIN_DIRECTIVES_FOR_QUALITY: int = 3
+MIN_DIRECTIVES_FOR_EMPHASIS: int = 5
+SPECIFICITY_TARGET: float = 0.5
+RATIONALE_TARGET: float = 0.25
+EMPHASIS_MAX_RATIO: float = 0.30
+DIRECTIVE_MAX_CHARS: int = 200
+
+OBVIOUS_RULES: tuple[str, ...] = (
+    "write clean code", "use meaningful names", "add comments",
+    "follow best practices", "handle errors appropriately", "keep it dry",
+    "use consistent indentation", "write good code",
+)
+
+STALE_MARKERS: tuple[str, ...] = ("TODO", "FIXME", "TBD", "XXX", "<placeholder>", "lorem ipsum")
+
+# High-precision credential shapes (plan.md §13: tiny surface, shape-validated).
+SECRET_SHAPE_PATTERNS: tuple[str, ...] = (
+    r"ghp_[A-Za-z0-9]{36}",
+    r"github_pat_[A-Za-z0-9_]{22,}",
+    r"sk-ant-[A-Za-z0-9-]{20,}",
+    r"sk-[A-Za-z0-9]{40,}",
+    r"AKIA[0-9A-Z]{16}",
+    r"xox[bpoas]-[A-Za-z0-9-]{10,}",
+    r"AIza[0-9A-Za-z_-]{35}",
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+)
+
+# --- v0.2.0: scoping thresholds ----------------------------------------------
+
+MONOLITH_LINES: int = 250
+
+# --- v0.2.0: agents & prompts (plan-v2-fable.md §4.5) ------------------------
+
+KNOWN_AGENT_FIELDS: frozenset[str] = frozenset({
+    "name", "description", "tools", "model", "target", "argument-hint",
+    "color", "temperature", "mode", "handoffs", "mcp-servers",
+})
+KNOWN_PROMPT_FIELDS: frozenset[str] = frozenset({
+    "name", "description", "mode", "model", "tools", "agent", "argument-hint",
+})
+AGENT_MAX_LINES: int = 500
+AGENT_MAX_TOKENS: int = 8000
+
+# --- v0.2.0: safety (plan-v2-fable.md §4.8) ----------------------------------
+
+KNOWN_CLAUDE_SETTINGS_KEYS: frozenset[str] = frozenset({
+    "permissions", "env", "hooks", "model", "statusLine", "includeCoAuthoredBy",
+    "cleanupPeriodDays", "apiKeyHelper", "defaultMode", "forceLoginMethod",
+    "enableAllProjectMcpServers", "enabledMcpjsonServers", "disabledMcpjsonServers",
+    "awsAuthRefresh", "awsCredentialExport", "outputStyle", "sandbox",
+    "alwaysThinkingEnabled", "companyAnnouncements", "spinnerTipsEnabled",
+    "$schema", "extraKnownMarketplaces", "plugins",
+})
+
+LOCAL_FILE_GITIGNORE_ENTRIES: tuple[str, ...] = (
+    "CLAUDE.local.md",
+    ".claude/settings.local.json",
+)
+
+# --- v0.2.0: skills disclosure thresholds ------------------------------------
+
+DISCLOSURE_BODY_LINES: int = 300
+MIN_DESCRIPTION_CONTENT_WORDS: int = 15

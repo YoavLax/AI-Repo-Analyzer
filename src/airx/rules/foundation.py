@@ -2,21 +2,57 @@
 point (`.github/copilot-instructions.md`, `AGENTS.md`, or `CLAUDE.md`).
 
 Corresponds to plan.md pillar 1. This build covers presence, the
-AGENTS.md-to-Claude bridge, a length curve, and a lightweight structure
-heuristic; the remaining pillar-1 rules (section coverage, rationale
-detection, import resolution, cross-file conflict detection) are the next
-roadmap milestone (see plan.md section 12, Milestone 2).
+AGENTS.md-to-Claude bridge, a length curve, a lightweight structure
+heuristic, section-signal coverage, CLAUDE.md `@path` import resolution,
+and entry-point parseability (plan-v2-fable.md §4.1).
 """
 from __future__ import annotations
 
+import posixpath
 import re
 
 from airx.discovery import ArtifactIndex
-from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
+from airx.model import (
+    Applicability,
+    ArtifactKind,
+    Diagnostic,
+    ParsedDocument,
+    Pillar,
+    Platform,
+    RuleSource,
+    Severity,
+)
 from airx.rules.registry import RuleScope, rule
 from airx import config
 
 _HEADING_RE = re.compile(r"^#{1,3}\s", re.MULTILINE)
+
+# --- foundation.sections.coverage (plan-v2-fable.md §4.1) --------------------
+
+_SECTION_HEADING_RE = re.compile(r"^#{1,6}\s.*", re.MULTILINE)
+_SECTION_INTRO_CHARS = 200
+#: (signal name, keyword set) in report order. A signal counts when any
+#: heading line or the first `_SECTION_INTRO_CHARS` chars of the body
+#: contain any keyword (case-insensitive).
+_SECTION_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("overview", ("overview", "about", "purpose", "what is")),
+    ("techstack", ("tech stack", "stack", "technologies", "built with", "framework", "language")),
+    ("guidelines", ("guideline", "convention", "style", "standard", "rule")),
+    ("structure", ("structure", "layout", "organization", "director", "folder")),
+    ("resources", ("script", "command", "tooling", "resource", "mcp")),
+)
+
+# --- foundation.imports.resolve ----------------------------------------------
+
+#: `@path` import tokens in CLAUDE.md: an `@` at line start or after whitespace,
+#: followed by a path whose first character is alphanumeric/underscore. Tokens
+#: like `@AGENTS.md` count; `user@example.com` does not (no preceding space).
+_IMPORT_RE = re.compile(r"(?m)(?:^|\s)@([A-Za-z0-9_][A-Za-z0-9_./-]*)")
+
+_ENTRYPOINT_KINDS = frozenset({
+    ArtifactKind.ENTRYPOINT_COPILOT,
+    ArtifactKind.ENTRYPOINT_CLAUDE,
+})
 
 
 def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
@@ -29,6 +65,9 @@ def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
     source=RuleSource.ADVISORY,
     doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
     summary="At least one always-on entry point exists (copilot-instructions.md, AGENTS.md, or CLAUDE.md).",
+    why="Without an always-on entry point, AI assistants start every task with zero repository context.",
+    fix="Create a .github/copilot-instructions.md, AGENTS.md, or CLAUDE.md describing the project.",
+    effort="additive",
 )
 def check_entrypoint_present(index: ArtifactIndex):
     has_any = bool(index.copilot_instructions or index.agents_md_paths or index.claude_md)
@@ -46,6 +85,10 @@ def check_entrypoint_present(index: ArtifactIndex):
     source=RuleSource.SPEC,
     doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
     summary="GitHub Copilot has an entry point (.github/copilot-instructions.md or AGENTS.md).",
+    platforms=(Platform.COPILOT,),
+    why="GitHub Copilot only auto-loads .github/copilot-instructions.md or AGENTS.md.",
+    fix="Add a .github/copilot-instructions.md (or a root AGENTS.md) with project instructions.",
+    effort="additive",
 )
 def check_copilot_entrypoint(index: ArtifactIndex):
     if index.copilot_instructions or index.agents_md_paths:
@@ -59,6 +102,10 @@ def check_copilot_entrypoint(index: ArtifactIndex):
     applicability=Applicability.PRESENCE, weight=4, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://code.claude.com/docs/en/memory",
     summary="Claude Code has an entry point (CLAUDE.md or .claude/CLAUDE.md).",
+    platforms=(Platform.CLAUDE,),
+    why="Claude Code auto-loads only CLAUDE.md; without it Claude starts with no project memory.",
+    fix="Add a CLAUDE.md (or bridge an existing AGENTS.md with a CLAUDE.md containing '@AGENTS.md').",
+    effort="additive",
 )
 def check_claude_entrypoint(index: ArtifactIndex):
     if index.claude_md:
@@ -75,6 +122,10 @@ def check_claude_entrypoint(index: ArtifactIndex):
     applicability=Applicability.QUALITY, weight=5, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://code.claude.com/docs/en/memory#agents-md",
     summary="If AGENTS.md exists without CLAUDE.md, it must be bridged for Claude Code to see it.",
+    platforms=(Platform.CLAUDE,),
+    why="Claude Code reads CLAUDE.md, not AGENTS.md, so unbridged AGENTS.md content is invisible to it.",
+    fix="Create a CLAUDE.md containing '@AGENTS.md' to bridge the existing AGENTS.md.",
+    effort="mechanical",
 )
 def check_agentsmd_bridged(index: ArtifactIndex):
     if not index.agents_md_paths:
@@ -93,6 +144,9 @@ def check_agentsmd_bridged(index: ArtifactIndex):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://code.claude.com/docs/en/memory#write-effective-instructions",
     summary="Entry point length is in the effective range; long files reduce instruction adherence.",
+    why="Very long entry points dilute instruction adherence, and near-empty ones carry no signal.",
+    fix="Keep the entry point near 30-150 lines and move detail into path-scoped instructions or skills.",
+    effort="authoring",
 )
 def check_entrypoint_length(index: ArtifactIndex):
     docs = _entrypoints(index)
@@ -126,6 +180,10 @@ def check_entrypoint_length(index: ArtifactIndex):
     doc_url="https://github.blog/ai-and-ml/github-copilot/5-tips-for-writing-better-custom-instructions-for-copilot/",
     summary="Entry point uses Markdown headings to organize distinct sections "
             "(overview, tech stack, guidelines, structure, resources).",
+    why="Headings let both humans and models locate the relevant instructions quickly.",
+    fix="Organize the entry point under Markdown headings such as overview, tech stack, guidelines, "
+        "structure, and resources.",
+    effort="authoring",
 )
 def check_entrypoint_structured(index: ArtifactIndex):
     docs = _entrypoints(index)
@@ -145,3 +203,106 @@ def check_entrypoint_structured(index: ArtifactIndex):
                         f"project overview, tech stack, guidelines, structure, and resources.",
             ))
     return (sum(sats) / len(sats)), diags
+
+
+@rule(
+    id="foundation.sections.coverage", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=6, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://github.blog/ai-and-ml/github-copilot/5-tips-for-writing-better-custom-instructions-for-copilot/",
+    summary="Entry point covers the five core section signals: overview, tech stack, "
+            "guidelines, structure, resources.",
+    why="Entry points that cover the five core topics give assistants a complete mental model "
+        "of the project up front.",
+    fix="Add the missing sections (overview, tech stack, guidelines, structure, resources) "
+        "to the entry point.",
+    effort="authoring",
+)
+def check_sections_coverage(index: ArtifactIndex):
+    docs = _entrypoints(index)
+    if not docs:
+        return None
+    total = len(_SECTION_SIGNALS)
+    sats: list[float] = []
+    diags: list[Diagnostic] = []
+    for doc in docs:
+        headings = "\n".join(_SECTION_HEADING_RE.findall(doc.body))
+        haystack = (headings + "\n" + doc.body[:_SECTION_INTRO_CHARS]).lower()
+        missing = [
+            name for name, keywords in _SECTION_SIGNALS
+            if not any(kw in haystack for kw in keywords)
+        ]
+        k = total - len(missing)
+        sats.append(k / total)
+        if missing:
+            diags.append(Diagnostic(
+                rule_id="foundation.sections.coverage", severity=Severity.INFO,
+                message=f"{doc.path.name} covers {k}/{total} core sections; "
+                        f"missing: {', '.join(missing)}.",
+            ))
+    return (sum(sats) / len(sats)), diags
+
+
+@rule(
+    id="foundation.imports.resolve", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
+    source=RuleSource.SPEC, platforms=(Platform.CLAUDE,),
+    doc_url="https://code.claude.com/docs/en/memory#claude-md-imports",
+    summary="Every @path import in CLAUDE.md resolves to an existing file inside the repository.",
+    why="A broken @import silently drops the referenced instructions from Claude Code's context.",
+    fix="Correct or remove each @path import in CLAUDE.md so it points at an existing file "
+        "inside the repository.",
+    effort="mechanical",
+)
+def check_imports_resolve(index: ArtifactIndex):
+    if index.claude_md is None:
+        return None
+    tokens = sorted(set(_IMPORT_RE.findall(index.claude_md.raw_text)))
+    if not tokens:
+        return None
+    # Membership in the scanned snapshot, not a live filesystem probe: the
+    # report must not depend on unscanned dirs or symlink targets (D3/D4).
+    tree_files = {str(f) for f in index.tree.files} if index.tree is not None else set()
+    ok = 0
+    diags: list[tuple] = []
+    for token in tokens:
+        normalized = posixpath.normpath(token)
+        if normalized.startswith(".."):
+            reason = "escapes the repository root"
+        elif normalized not in tree_files:
+            reason = "does not exist in the scanned tree"
+        else:
+            ok += 1
+            continue
+        diags.append((index.claude_md_path, Diagnostic(
+            rule_id="foundation.imports.resolve", severity=Severity.ERROR,
+            message=f"CLAUDE.md imports '@{token}' but the target {reason}.",
+        )))
+    return (ok / len(tokens)), diags
+
+
+@rule(
+    id="foundation.entrypoint.parses", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
+    source=RuleSource.SPEC,
+    doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
+    summary="Entry-point files decode as UTF-8 and any YAML frontmatter parses.",
+    why="An entry point that fails to decode or parse is silently dropped or garbled "
+        "when the assistant loads it.",
+    fix="Re-save the entry point as UTF-8 and repair its YAML frontmatter fences.",
+    effort="mechanical",
+)
+def check_entrypoint_parses(index: ArtifactIndex):
+    entrypoints = [a for a in index.artifacts if a.kind in _ENTRYPOINT_KINDS]
+    if not entrypoints:
+        return None
+    diags: list[tuple] = []
+    for artifact in entrypoints:
+        if artifact.parse_error is not None:
+            diags.append((artifact.rel_path, Diagnostic(
+                rule_id="foundation.entrypoint.parses", severity=Severity.ERROR,
+                message=f"{artifact.rel_path} failed to parse: {artifact.parse_error}",
+            )))
+    if diags:
+        return 0.0, diags
+    return 1.0, []
