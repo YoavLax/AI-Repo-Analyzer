@@ -1,0 +1,23 @@
+tests/fixtures/repo_safety_local_committed/.claude/settings.local.json
+  s_69eb138422a6f1::t_d43ed11d14dafc 1
+tests/test_review_regressions.py
+  s_69eb138422a6f1::t_1f14f6784aa6c4 35-42,57-58,78-79,89-90
+  s_69eb138422a6f1::t_a220c288b55547 192-193
+  s_69eb138422a6f1::t_f8e2fdd1a169fc 72-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "c6bd84ec530e374a98512b33ba91126bc346dda1",
+  "prompts": {},
+  "sessions": {
+    "s_69eb138422a6f1": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "c8148bc1-67e2-45ed-b4cc-113ae286d39a",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
