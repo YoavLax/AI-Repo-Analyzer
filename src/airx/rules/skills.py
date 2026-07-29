@@ -4,6 +4,9 @@ Vendored and adapted from AgentEval (github.com/YoavLax/AgentEval,
 `src/agenteval/rules/{frontmatter,description,disclosure,sizing,references,compat}.py`,
 MIT licensed), per plan.md open question 2 (resolved: vendor rather than
 depend on the `agenteval` package — see `airx/config.py` for the rationale).
+The v0.2.0 additions (plan-v2-fable.md §4.2) complete the AgentEval port:
+namespace-free names, the dedicated CWE-59 escape rule, progressive-disclosure
+usage, load triggers, script hygiene, and description coherence.
 
 Every rule function returns `(satisfaction, diagnostics)` or `None`:
   * `None` means the rule does not apply to this file (e.g. there is no
@@ -24,7 +27,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from airx import config
+from airx import config, fs
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
 from airx.rules.registry import RuleScope, rule
 from airx.tokenizer import estimate_tokens
@@ -38,11 +41,11 @@ _YAML_ALIAS_RE = re.compile(r"\*([A-Za-z_][A-Za-z0-9_-]*)")
 
 _FIRST_PERSON_RE = re.compile(
     r"(?:(?:^|(?<=\.\s))I\b)"
-    r"|\bI(?:can|will|am|do|have|would|should|need|shall|won't|didn't|don't)\b"
+    r"|\bI\s+(?:can|will|am|do|have|would|should|need|shall|won't|didn't|don't)\b"
     r"|\bMy\b",
     re.MULTILINE,
 )
-_SECOND_PERSON_RE = re.compile(r"\b[Yy]ou(?:can|will|should|must|need|are|have|do|get|use)\b")
+_SECOND_PERSON_RE = re.compile(r"\b[Yy]ou\s+(?:can|will|should|must|need|are|have|do|get|use)\b")
 
 _ACTION_VERBS = frozenset({
     "generates", "analyzes", "validates", "deploys", "processes", "creates", "builds",
@@ -93,6 +96,24 @@ _TABLE_SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$")
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
 _MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
 _DIRECTIVE_RE = re.compile(r"(?:source|file|include):\s*([^\s]+\.[a-zA-Z0-9]+)", re.IGNORECASE)
+
+# --- v0.2.0 additions (plan-v2-fable.md §4.2) --------------------------------
+
+_WORD_RE = re.compile(r"[a-zA-Z]+")
+
+#: Characters that indicate a namespaced skill name; plugin loaders add
+#: namespace prefixes automatically, so they must not appear in `name`.
+_NAMESPACE_CHARS: tuple[str, ...] = ("/", ":")
+
+#: A reference is considered conditionally loaded when the line mentioning it
+#: (or a directly adjacent line) matches this pattern (plan-v2-fable.md §4.2).
+_LOAD_TRIGGER_RE = re.compile(r"(?:when|if|read .* (?:for|when|if)|run .* when)", re.IGNORECASE)
+
+#: Literal substrings that mark a script as interactive (blocks agent sessions).
+_INTERACTIVE_PATTERNS: tuple[str, ...] = ("input(", "read -p", "Read-Host", "prompt(")
+
+#: Literal substrings that count as a help/usage surface in a script.
+_HELP_PATTERNS: tuple[str, ...] = ("--help", "argparse", "click", "commander", "yargs")
 
 
 def _is_real_base64(text: str) -> bool:
@@ -222,6 +243,71 @@ def _reference_depth(ref_path: str) -> int:
     return len(dir_parts)
 
 
+def _visible_files(root: Path) -> list[Path]:
+    """Files under `root` that fs.scan would have recorded: no symlinks (files
+    or ancestor dirs) and no excluded-dir components. Keeping rule input equal
+    to the scanned tree preserves determinism guarantee D4/D9 — a repo whose
+    scan is identical must score identically."""
+    try:
+        candidates = sorted(root.rglob("*"), key=lambda p: p.as_posix())
+    except OSError:
+        return []
+    out: list[Path] = []
+    for p in candidates:
+        try:
+            rel_parts = p.relative_to(root).parts
+            if any(part in fs.DEFAULT_EXCLUDED_DIRS for part in rel_parts):
+                continue
+            if any((root.joinpath(*rel_parts[:i + 1])).is_symlink() for i in range(len(rel_parts))):
+                continue
+            if p.is_file():
+                out.append(p)
+        except OSError:
+            continue
+    return out
+
+
+def _is_scanned_file(base: Path, target: Path) -> bool:
+    """True when `target` (inside `base`) is a file fs.scan would have
+    recorded: a regular non-symlink file with no symlinked ancestor and no
+    excluded-dir component. Both an absent file and a scan-invisible one
+    (symlink, __pycache__/...) answer False, so the answer — and therefore
+    the score — is a function of the scanned tree alone (D4/D9)."""
+    try:
+        rel_parts = target.relative_to(base).parts
+    except ValueError:
+        return False
+    if any(part in fs.DEFAULT_EXCLUDED_DIRS for part in rel_parts):
+        return False
+    try:
+        for i in range(len(rel_parts)):
+            if base.joinpath(*rel_parts[:i + 1]).is_symlink():
+                return False
+        return target.is_file()
+    except OSError:
+        return False
+
+
+def _script_files(doc: ParsedDocument) -> list[Path] | None:
+    """Scan-visible files under the `scripts/` directory next to SKILL.md,
+    sorted for determinism; `None` when no such directory."""
+    scripts_dir = doc.path.parent / "scripts"
+    try:
+        if scripts_dir.is_symlink() or not scripts_dir.is_dir():
+            return None
+    except OSError:
+        return None
+    return _visible_files(scripts_dir)
+
+
+def _read_text_defensively(path: Path) -> str | None:
+    """Read a file as UTF-8; unreadable or undecodable files are skipped."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 # =============================================================================
 # name.*
 # =============================================================================
@@ -231,6 +317,9 @@ def _reference_depth(ref_path: str) -> int:
     applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` field is present in SKILL.md frontmatter.",
+    why="Without a name the skill cannot be indexed or invoked by agent platforms.",
+    fix="Add a `name:` field to the SKILL.md frontmatter matching the directory name.",
+    effort="additive",
 )
 def check_name_required(doc: ParsedDocument):
     if doc.frontmatter.get("name") is None:
@@ -244,6 +333,9 @@ def check_name_required(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` is a YAML string, not a value silently coerced to boolean/number/null.",
+    why="YAML silently coerces unquoted values, so the loaded name differs from what was written.",
+    fix="Quote the name value so YAML parses it as a string.",
+    effort="mechanical",
 )
 def check_name_type(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -262,6 +354,9 @@ def check_name_type(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` is 64 characters or fewer.",
+    why="Names over the 64-character spec limit may be rejected or truncated by loaders.",
+    fix="Shorten the skill name to 64 characters or fewer.",
+    effort="mechanical",
 )
 def check_name_max_length(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -278,6 +373,9 @@ def check_name_max_length(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` uses lowercase letters, numbers, and hyphens only.",
+    why="Names outside lowercase letters, numbers, and hyphens are rejected by spec-conformant loaders.",
+    fix="Rename the skill using lowercase letters, numbers, and hyphens only.",
+    effort="mechanical",
 )
 def check_name_charset(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -297,6 +395,9 @@ def check_name_charset(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` has no leading/trailing hyphen and no consecutive hyphens.",
+    why="Leading, trailing, or doubled hyphens violate the name grammar in the spec.",
+    fix="Remove the leading, trailing, or consecutive hyphens from the name.",
+    effort="mechanical",
 )
 def check_name_hyphens(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -321,6 +422,9 @@ def check_name_hyphens(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` does not contain the reserved words 'claude' or 'anthropic'.",
+    why="Names containing the reserved words 'claude' or 'anthropic' may be rejected by loaders.",
+    fix="Rename the skill so it does not contain the reserved word.",
+    effort="mechanical",
 )
 def check_name_reserved(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -338,6 +442,9 @@ def check_name_reserved(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
     summary="`name` matches the parent directory name. VS Code/Copilot silently drops mismatches.",
+    why="VS Code/Copilot silently fails to load a skill whose name does not match its directory.",
+    fix="Rename the directory or the `name` field so the two match exactly.",
+    effort="mechanical",
 )
 def check_name_dirname_match(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -353,6 +460,30 @@ def check_name_dirname_match(doc: ParsedDocument):
     return 1.0, []
 
 
+@rule(
+    id="skills.name.no-namespace", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
+    source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
+    summary="`name` contains no namespace separator ('/' or ':'); plugins add prefixes automatically.",
+    why="Plugin loaders add namespace prefixes automatically, so '/' or ':' in a name breaks resolution.",
+    fix="Remove the namespace separator and use the bare skill name.",
+    effort="mechanical",
+)
+def check_name_no_namespace(doc: ParsedDocument):
+    name = doc.frontmatter.get("name")
+    if not isinstance(name, str) or not name:
+        return None
+    found = [c for c in _NAMESPACE_CHARS if c in name]
+    if not found:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="skills.name.no-namespace", severity=Severity.ERROR,
+        message=f"Name '{name}' contains namespace separator(s) {found}; plugins add namespace "
+                f"prefixes automatically, so use the bare skill name.",
+        line=_field_line(doc.raw_text, "name"),
+    )]
+
+
 # =============================================================================
 # description.*
 # =============================================================================
@@ -362,6 +493,9 @@ def check_name_dirname_match(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` field is present in SKILL.md frontmatter.",
+    why="Agents route to skills solely via the description; without one the skill is never selected.",
+    fix="Add a `description:` field explaining what the skill does and when to use it.",
+    effort="additive",
 )
 def check_description_required(doc: ParsedDocument):
     if doc.frontmatter.get("description") is None:
@@ -375,6 +509,9 @@ def check_description_required(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` is a YAML string, not a value silently coerced by the parser.",
+    why="YAML coercion turns an unquoted description into a non-string value the loader cannot use.",
+    fix="Quote the description so YAML parses it as a string.",
+    effort="mechanical",
 )
 def check_description_type(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -392,6 +529,9 @@ def check_description_type(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` is not blank or whitespace-only.",
+    why="An empty description gives the routing model nothing to match against.",
+    fix="Write a description covering what the skill does and when to use it.",
+    effort="authoring",
 )
 def check_description_non_empty(doc: ParsedDocument):
     if "description" not in doc.frontmatter:
@@ -408,6 +548,9 @@ def check_description_non_empty(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` is 1024 characters or fewer.",
+    why="Descriptions over the 1024-character spec limit blow the always-loaded metadata budget.",
+    fix="Trim the description to the essentials and move detail into the body.",
+    effort="authoring",
 )
 def check_description_max_length(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -425,6 +568,9 @@ def check_description_max_length(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` contains no XML/HTML markup.",
+    why="Markup in the description leaks into the agent's routing prompt as literal tags.",
+    fix="Remove the XML/HTML tags from the description.",
+    effort="mechanical",
 )
 def check_description_no_xml(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -442,6 +588,9 @@ def check_description_no_xml(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/optimizing-descriptions",
     summary="`description` is written in third person, not first/second person.",
+    why="First/second-person voice confuses routing, which expects a third-person capability statement.",
+    fix="Rewrite the description in third person, e.g. 'Generates...' or 'Validates...'.",
+    effort="authoring",
 )
 def check_description_person_voice(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -466,6 +615,9 @@ def check_description_person_voice(doc: ParsedDocument):
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/optimizing-descriptions",
     summary="Graded 0-100 score of description discoverability (action verbs, trigger phrases, "
             "keyword density, specificity, length).",
+    why="Discoverable descriptions with action verbs and trigger phrases decide whether the skill is ever loaded.",
+    fix="Add action verbs, explicit 'Use when...' triggers, and domain keywords to the description.",
+    effort="authoring",
 )
 def check_description_quality(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -485,6 +637,9 @@ def check_description_quality(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/optimizing-descriptions",
     summary=f"Description quality score meets the {config.MIN_DESCRIPTION_SCORE_DEFAULT}/100 floor.",
+    why="A very weak description means the agent will rarely select this skill.",
+    fix="Rewrite the description with action verbs, trigger phrases, and specific domain terms.",
+    effort="authoring",
 )
 def check_description_min_score(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -501,6 +656,32 @@ def check_description_min_score(doc: ParsedDocument):
     )]
 
 
+@rule(
+    id="skills.coherence", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/optimizing-descriptions",
+    summary=f"Description carries at least {config.MIN_DESCRIPTION_CONTENT_WORDS} content words "
+            f"(non-stopword), enough signal to route on.",
+    why="A description with almost no content words gives the routing model too little signal to match on.",
+    fix="Expand the description with the specific tasks, inputs, and trigger phrases the skill covers.",
+    effort="authoring",
+)
+def check_coherence(doc: ParsedDocument):
+    desc = doc.frontmatter.get("description")
+    if not isinstance(desc, str):
+        return None
+    words = _WORD_RE.findall(desc)
+    content_words = [w for w in words if w.lower() not in _STOP_WORDS]
+    if len(content_words) >= config.MIN_DESCRIPTION_CONTENT_WORDS:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="skills.coherence", severity=Severity.INFO,
+        message=f"Description is too narrow: {len(content_words)} content word(s), below the "
+                f"{config.MIN_DESCRIPTION_CONTENT_WORDS}-word minimum for reliable routing.",
+        line=_field_line(doc.raw_text, "description"),
+    )]
+
+
 # =============================================================================
 # frontmatter.*
 # =============================================================================
@@ -510,6 +691,9 @@ def check_description_min_score(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#frontmatter",
     summary="Frontmatter has no fields outside the known SKILL.md schema.",
+    why="Unknown fields are silently ignored by loaders, hiding typos of meaningful fields.",
+    fix="Remove or rename the fields to match the documented SKILL.md schema.",
+    effort="mechanical",
 )
 def check_unknown_fields(doc: ParsedDocument):
     unknown = [f for f in doc.frontmatter if f not in config.KNOWN_FRONTMATTER_FIELDS]
@@ -525,6 +709,9 @@ def check_unknown_fields(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#frontmatter",
     summary="Frontmatter contains no YAML anchors/aliases, which silently copy values between fields.",
+    why="Anchors and aliases silently copy values between fields and can bypass validation.",
+    fix="Replace the YAML anchors and aliases with literal values.",
+    effort="mechanical",
 )
 def check_yaml_anchors(doc: ParsedDocument):
     fm_raw = doc.frontmatter_raw
@@ -551,6 +738,9 @@ def check_yaml_anchors(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#progressive-disclosure",
     summary="Frontmatter fits the ~100-token metadata budget.",
+    why="Every skill's frontmatter is always loaded, so oversized metadata taxes each session.",
+    fix="Trim the frontmatter to a name plus a concise description.",
+    effort="authoring",
 )
 def check_budget_metadata(doc: ParsedDocument):
     if not doc.frontmatter_raw:
@@ -569,6 +759,9 @@ def check_budget_metadata(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=5, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#progressive-disclosure",
     summary="Body fits the 5,000-token instruction budget.",
+    why="Bodies past the instruction budget dilute adherence once the skill loads.",
+    fix="Move large content blocks into referenced files loaded on demand.",
+    effort="authoring",
 )
 def check_budget_body(doc: ParsedDocument):
     if not doc.body.strip():
@@ -588,6 +781,9 @@ def check_budget_body(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#progressive-disclosure",
     summary="File is 500 lines or fewer.",
+    why="Files past 500 lines flood the context window and dilute instruction adherence.",
+    fix="Split the content into referenced files under the skill directory.",
+    effort="authoring",
 )
 def check_sizing_lines(doc: ParsedDocument):
     n = doc.line_count
@@ -602,6 +798,9 @@ def check_sizing_lines(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#progressive-disclosure",
     summary="File fits the 8,000-token overall budget.",
+    why="Files past the 8,000-token budget crowd out task context when loaded.",
+    fix="Move reference material into separate files loaded on demand.",
+    effort="authoring",
 )
 def check_sizing_tokens(doc: ParsedDocument):
     tokens = estimate_tokens(doc.raw_text)
@@ -616,6 +815,9 @@ def check_sizing_tokens(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/best-practices",
     summary="No code block in the body exceeds 50 lines.",
+    why="Long inline code blocks consume the loaded-context budget without being progressively disclosed.",
+    fix="Move code blocks over 50 lines into referenced script files.",
+    effort="authoring",
 )
 def check_bloat_code_blocks(doc: ParsedDocument):
     if not doc.body:
@@ -637,6 +839,9 @@ def check_bloat_code_blocks(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/best-practices",
     summary="No table in the body exceeds 20 data rows.",
+    why="Large inline tables consume tokens that should be progressively disclosed on demand.",
+    fix="Move tables over 20 data rows into a referenced data file.",
+    effort="authoring",
 )
 def check_bloat_tables(doc: ParsedDocument):
     if not doc.body:
@@ -657,6 +862,9 @@ def check_bloat_tables(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/best-practices",
     summary="No base64-encoded blob is embedded in the body.",
+    why="Embedded base64 blobs waste tokens and carry no meaning the agent can read.",
+    fix="Move the binary data into a referenced file.",
+    effort="authoring",
 )
 def check_bloat_base64(doc: ParsedDocument):
     if not doc.body:
@@ -669,16 +877,155 @@ def check_bloat_base64(doc: ParsedDocument):
 
 
 # =============================================================================
+# disclosure.* (progressive disclosure in practice — v0.2.0)
+# =============================================================================
+
+@rule(
+    id="skills.disclosure.used", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=4, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#progressive-disclosure",
+    summary=f"A body over {config.DISCLOSURE_BODY_LINES} lines splits detail into a sibling "
+            f"references/ or scripts/ directory.",
+    why="A very long body loaded all at once defeats progressive disclosure and floods the context window.",
+    fix="Split detail into a references/ or scripts/ directory next to SKILL.md and link to it from the body.",
+    effort="authoring",
+)
+def check_disclosure_used(doc: ParsedDocument):
+    body_lines = len(doc.body.splitlines())
+    if body_lines <= config.DISCLOSURE_BODY_LINES:
+        return None
+    skill_dir = doc.path.parent
+    has_sibling = False
+    for name in ("references", "scripts"):
+        sibling = skill_dir / name
+        try:
+            if not sibling.is_symlink() and sibling.is_dir() and _visible_files(sibling):
+                # An empty (or scan-invisible) sibling dir is not disclosure:
+                # fs.scan records only files, so only file contents may count.
+                has_sibling = True
+                break
+        except OSError:
+            continue
+    if has_sibling:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="skills.disclosure.used", severity=Severity.INFO,
+        message=f"Body is {body_lines} lines (over {config.DISCLOSURE_BODY_LINES}) with no sibling "
+                f"'references/' or 'scripts/' directory; split detail out for progressive disclosure.",
+    )]
+
+
+@rule(
+    id="skills.disclosure.load-triggers", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#progressive-disclosure",
+    summary="At least one file reference is introduced with a load condition (when/if clause).",
+    why="References without load conditions get read eagerly or never, instead of when they are needed.",
+    fix="Introduce each reference with a condition, e.g. 'Read references/setup.md when configuring a new environment.'.",
+    effort="authoring",
+)
+def check_disclosure_load_triggers(doc: ParsedDocument):
+    refs = _extract_references(doc.body)
+    if not refs:
+        return None
+    lines = doc.body.splitlines()
+    for i, line in enumerate(lines):
+        if not any(ref in line for ref in refs):
+            continue
+        window = lines[max(0, i - 1): i + 2]
+        if any(_LOAD_TRIGGER_RE.search(neighbor) for neighbor in window):
+            return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="skills.disclosure.load-triggers", severity=Severity.INFO,
+        message=f"None of the {len(refs)} file reference(s) is introduced with a load condition; "
+                f"tell the agent when to read each file (e.g. 'Read X when ...').",
+    )]
+
+
+# =============================================================================
+# scripts.* (bundled script hygiene — v0.2.0)
+# =============================================================================
+
+@rule(
+    id="skills.scripts.non-interactive", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
+    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/best-practices",
+    summary="Bundled scripts do not block on interactive prompts (input(), read -p, Read-Host, prompt()).",
+    why="Agents cannot answer interactive prompts, so a blocking script hangs the session.",
+    fix="Replace interactive prompts with command-line arguments or environment defaults.",
+    effort="additive",
+)
+def check_scripts_non_interactive(doc: ParsedDocument):
+    files = _script_files(doc)
+    if files is None:
+        return None
+    skill_dir = doc.path.parent
+    diags: list[Diagnostic] = []
+    for path in files:
+        text = _read_text_defensively(path)
+        if text is None:
+            continue
+        hits = [p for p in _INTERACTIVE_PATTERNS if p in text]
+        if hits:
+            rel = path.relative_to(skill_dir).as_posix()
+            diags.append(Diagnostic(
+                rule_id="skills.scripts.non-interactive", severity=Severity.WARNING,
+                message=f"Script '{rel}' appears interactive ({', '.join(hits)}); "
+                        f"agents cannot answer prompts, so the session hangs.",
+            ))
+    return (1.0, []) if not diags else (0.0, diags)
+
+
+@rule(
+    id="skills.scripts.help", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/best-practices",
+    summary="Every bundled script exposes a help surface (--help, argparse, click, commander, or yargs).",
+    why="Scripts without a help surface force the agent to guess invocation syntax.",
+    fix="Add --help output or use an argument parser (argparse, click, commander, yargs).",
+    effort="additive",
+)
+def check_scripts_help(doc: ParsedDocument):
+    files = _script_files(doc)
+    if files is None:
+        return None
+    skill_dir = doc.path.parent
+    diags: list[Diagnostic] = []
+    for path in files:
+        text = _read_text_defensively(path)
+        if text is None:
+            continue
+        if not any(p in text for p in _HELP_PATTERNS):
+            rel = path.relative_to(skill_dir).as_posix()
+            diags.append(Diagnostic(
+                rule_id="skills.scripts.help", severity=Severity.INFO,
+                message=f"Script '{rel}' exposes no help surface "
+                        f"(none of: {', '.join(_HELP_PATTERNS)}).",
+            ))
+    return (1.0, []) if not diags else (0.0, diags)
+
+
+# =============================================================================
 # references.*
 # =============================================================================
 
 @rule(
     id="skills.references.resolve", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
-    applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
+    applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#file-references",
-    summary="Relative file references in the body exist on disk and stay within the skill directory (CWE-59).",
+    summary="Relative file references in the body resolve to existing files inside the skill directory.",
+    why="A referenced file that does not exist sends the agent on a failing detour at load time.",
+    fix="Fix the reference path or add the missing file inside the skill directory.",
+    effort="mechanical",
 )
 def check_references_resolve(doc: ParsedDocument):
+    """Existence check for body references.
+
+    A reference that escapes the skill directory can never exist *inside* it,
+    so it is reported here as unresolvable ('resolves outside the skill
+    directory') in addition to the dedicated CWE-59 rule
+    `skills.references.escape`, which owns the escape finding itself.
+    """
     refs = _extract_references(doc.body)
     if not refs:
         return None
@@ -687,12 +1034,40 @@ def check_references_resolve(doc: ParsedDocument):
     for ref in refs:
         target = (skill_dir / ref).resolve()
         if not target.is_relative_to(skill_dir):
+            # No absolute target path in the message: the checkout location
+            # must not leak into report output.
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
-                                     message=f"Reference '{ref}' resolves outside the skill directory ({target})."))
+                                     message=f"Reference '{ref}' resolves outside the skill directory."))
             continue
-        if not target.exists():
+        if not _is_scanned_file(skill_dir, target):
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
-                                     message=f"Referenced file does not exist: '{ref}'."))
+                                     message=f"Referenced file does not exist in the scanned tree: '{ref}'."))
+    return (1.0, []) if not diags else (0.0, diags)
+
+
+@rule(
+    id="skills.references.escape", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
+    applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
+    source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#file-references",
+    summary="No file reference resolves outside the skill directory (CWE-59 link following).",
+    why="A reference escaping the skill directory (CWE-59) can read unrelated or sensitive files and breaks packaging.",
+    fix="Move the referenced file inside the skill directory and reference it with a relative path.",
+    effort="mechanical",
+)
+def check_references_escape(doc: ParsedDocument):
+    refs = _extract_references(doc.body)
+    if not refs:
+        return None
+    skill_dir = doc.path.parent.resolve()
+    diags: list[Diagnostic] = []
+    for ref in refs:
+        target = (skill_dir / ref).resolve()
+        if not target.is_relative_to(skill_dir):
+            diags.append(Diagnostic(
+                rule_id="skills.references.escape", severity=Severity.ERROR,
+                message=f"Reference '{ref}' escapes the skill directory; "
+                        f"skills must be self-contained (CWE-59).",
+            ))
     return (1.0, []) if not diags else (0.0, diags)
 
 
@@ -701,6 +1076,9 @@ def check_references_resolve(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#file-references",
     summary="File references stay one directory level deep from SKILL.md.",
+    why="Deeply nested references break the flat one-level layout loaders expect from a skill directory.",
+    fix="Move the referenced files to at most one directory level below SKILL.md.",
+    effort="mechanical",
 )
 def check_references_depth(doc: ParsedDocument):
     refs = _extract_references(doc.body)
@@ -726,6 +1104,9 @@ def check_references_depth(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=1, severity=Severity.INFO,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#frontmatter",
     summary="Informational: flags frontmatter fields that only work in Claude Code.",
+    why="Claude-only fields are silently ignored by VS Code/Copilot, so the skill behaves differently per platform.",
+    fix="Check each flagged field against the compatibility matrix and remove it if cross-platform behavior matters.",
+    effort="mechanical",
 )
 def check_compat_claude_only(doc: ParsedDocument):
     found = sorted(f for f in doc.frontmatter if f in config.CLAUDE_ONLY_FIELDS)
@@ -740,6 +1121,9 @@ def check_compat_claude_only(doc: ParsedDocument):
     applicability=Applicability.QUALITY, weight=1, severity=Severity.INFO,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#frontmatter",
     summary="Informational: flags frontmatter fields with unverified behavior in Codex/Cursor.",
+    why="Fields with unverified behavior in some agents may be ignored or misread there without notice.",
+    fix="Verify the flagged fields against each target agent's documentation before relying on them.",
+    effort="mechanical",
 )
 def check_compat_unverified(doc: ParsedDocument):
     diags = []
@@ -763,6 +1147,9 @@ def check_compat_unverified(doc: ParsedDocument):
     applicability=Applicability.PRESENCE, weight=8, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/",
     summary="At least one SKILL.md exists in the repository.",
+    why="Skills let agents load domain-specific procedures on demand instead of relying on one monolithic prompt.",
+    fix="Add a skills/<name>/SKILL.md with name and description frontmatter for a recurring task.",
+    effort="authoring",
 )
 def check_skills_present(index):
     if index.skills:
@@ -779,6 +1166,9 @@ def check_skills_present(index):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification",
     summary="Every discovered SKILL.md is valid UTF-8 with well-formed YAML frontmatter.",
+    why="A skill that fails UTF-8 or YAML parsing is silently skipped by loaders.",
+    fix="Fix the encoding or frontmatter YAML syntax reported in the diagnostic.",
+    effort="mechanical",
 )
 def check_skills_parse(index):
     total = len(index.skills) + len(index.skill_parse_errors)

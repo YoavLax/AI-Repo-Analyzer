@@ -1,0 +1,4 @@
+{
+  "name": "airx-tooling-fixture",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu"
+}

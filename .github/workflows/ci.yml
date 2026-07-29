@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -38,4 +38,8 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e .
       - name: airx analyze .
-        run: python -m airx.cli analyze . --fail-on never
+        run: airx analyze . --fail-on never
+      - name: Rule catalog is in sync with docs/RULES.md
+        run: |
+          airx rules --format md > /tmp/RULES.md
+          diff -u docs/RULES.md /tmp/RULES.md

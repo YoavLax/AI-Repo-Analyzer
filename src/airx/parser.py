@@ -23,7 +23,9 @@ def parse(path: Path) -> ParsedDocument:
         # utf-8-sig strips a leading BOM if present.
         raw_text = path.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise ParseError(f"File is not valid UTF-8: {path}") from exc
+        # No absolute path in the message: it ends up in reports, and the
+        # checkout location must not leak into otherwise-identical output.
+        raise ParseError("File is not valid UTF-8") from exc
 
     match = _FRONTMATTER_RE.match(raw_text)
     if not match:
@@ -33,7 +35,7 @@ def parse(path: Path) -> ParsedDocument:
     try:
         frontmatter = yaml.safe_load(fm_raw)
     except yaml.YAMLError as exc:
-        raise ParseError(f"Invalid YAML frontmatter in {path}: {exc}") from exc
+        raise ParseError(f"Invalid YAML frontmatter: {exc}") from exc
 
     if not isinstance(frontmatter, dict):
         # A scalar/list/None frontmatter body is malformed for our purposes;

@@ -1,6 +1,6 @@
 [project]
 name = "ai-repo-analyzer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Deterministic AI-readiness scorer for GitHub Copilot and Claude Code repository configuration."
 readme = "README.md"
 license = { text = "MIT" }
@@ -37,7 +37,7 @@ Issues = "https://github.com/YoavLax/AI-Repo-Analyzer/issues"
 Changelog = "https://github.com/YoavLax/AI-Repo-Analyzer/blob/main/CHANGELOG.md"
 
 [project.scripts]
-airx = "airx.cli:main"
+airx = "airx.cli:_run"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

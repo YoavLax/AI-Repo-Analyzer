@@ -11,12 +11,13 @@ out, every time.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
-> **Status: pre-1.0, early and evolving.** The full design — 8 scoring
-> pillars, ~130 rules, presence/quality weighting, waivers, HTML/SARIF
-> reports, a GitHub Action — is documented in [`plan.md`](plan.md). This
-> release implements the **Skills** pillar in full and a first cut of the
-> **Foundation** pillar. See [Current status](#current-status) below and
-> [`CHANGELOG.md`](CHANGELOG.md) for exactly what's built.
+> **Status: v0.2.0 "Fable" — pre-1.0.** All eight scoring pillars are live
+> with a catalog of 94 rules, platform sub-scores, waivers, and
+> terminal/JSON/Markdown/SARIF reports. The original design document is
+> [`plan.md`](plan.md); the v0.2.0 refactor plan is
+> [`plan-v2-fable.md`](plan-v2-fable.md); the full generated rule catalog is
+> [`docs/RULES.md`](docs/RULES.md). See [`CHANGELOG.md`](CHANGELOG.md) for
+> exactly what's built.
 
 ---
 
@@ -24,31 +25,29 @@ out, every time.
 
 Repositories increasingly ship configuration meant for AI coding agents —
 `copilot-instructions.md`, `CLAUDE.md`, `AGENTS.md`, `SKILL.md` files, custom
-agents, hooks. Whether any of it actually *works* is usually invisible until
-an agent silently fails to load a skill, ignores a 900-line instructions
-file, or never triggers a skill because its description is too vague.
+agents, path-scoped instructions, hooks, MCP servers. Whether any of it
+actually *works* is usually invisible until an agent silently fails to load a
+skill, ignores a 900-line instructions file, or never triggers a skill because
+its description is too vague.
 
 AI Readiness Analyzer answers "is this repo actually ready for an AI agent?"
 the same way a linter answers "does this code compile" — deterministically,
 offline, and with a specific file and line number for every issue.
 
-## What it checks today
+## What it checks
 
-- **`SKILL.md` files** — the [Agent Skills](https://agentskills.io) open
-  standard used by both GitHub Copilot and Claude Code. Frontmatter validity,
-  the notorious "name must match the parent directory or VS Code silently
-  drops the skill" trap, YAML type-coercion and anchor/alias footguns, a
-  0–100 description-quality score (does the description actually trigger
-  activation?), progressive-disclosure token budgets, and file-reference
-  resolution with path-traversal protection.
-- **Entry points** — presence of `.github/copilot-instructions.md`,
-  `AGENTS.md`, and `CLAUDE.md`; whether an `AGENTS.md` is actually visible to
-  Claude Code (it isn't, unless bridged — a very common miss); length and
-  structure heuristics.
+Eight pillars, 94 rules ([full catalog](docs/RULES.md)):
 
-See [`plan.md`](plan.md) §7 for the full rule catalog (implemented and
-planned) with citations back to the GitHub Copilot and Claude Code
-documentation each rule is derived from.
+| Pillar | Weight | What it covers |
+|---|---|---|
+| Foundation | 20 | Entry points exist and parse; `AGENTS.md`↔`CLAUDE.md` bridge; length and structure; section coverage; `@import` resolution |
+| Instruction quality | 15 | Specific, justified, exemplified directives; no boilerplate, stale markers, or credential-shaped strings; commands and links resolve |
+| Context scoping | 12 | Path-scoped `*.instructions.md`; the missing-`applyTo` silent no-op; dead globs; monolith detection |
+| Skills | 15 | The full [Agent Skills](https://agentskills.io) validation set: frontmatter, the dirname-match silent-drop trap, description quality (0–100), token budgets, CWE-59 reference escapes, progressive disclosure |
+| Agents & prompts | 10 | Custom-agent frontmatter, description quality, least-privilege `tools`, prompt→agent reference resolution |
+| Verification | 12 | Documented **and resolvable** test/build/lint commands; CI; iterate-until-green and show-evidence instructions; hooks schema |
+| Tooling | 8 | MCP config validity and secret indirection; setup scripts; devcontainer; version pins |
+| Safety | 8 | Committed personal files; permission-bypass settings; secrets in settings/MCP; `curl \| sh` injection surface |
 
 ## Quickstart
 
@@ -65,43 +64,74 @@ airx analyze /path/to/some/repo
 ```
 AI Readiness Analyzer — /path/to/some/repo
 
-Overall score: 56.2/100   Grade: D
+Overall score: 61.1/100   Grade: D
+Platforms:     copilot 62.5   claude 61.1   parity delta 1.4
 
 Pillars:
-  foundation       31.1%   (presence  77.8%, quality   0.0%, weight 20, 6 rules)
-  skills           89.6%   (presence 100.0%, quality  82.7%, weight 15, 30 rules)
+  foundation      86.4%   (presence 100.0%, quality  77.3%, weight 20, 9 rules)
+  skills          99.8%   (presence 100.0%, quality  99.6%, weight 15, 37 rules)
   ...
 
-Findings (3):
+Findings (20):
   [error  ] skills.name.dirname-match   .github/skills/deploy/SKILL.md
             Name 'deployer' does not match parent directory 'deploy'. VS Code/Copilot silently fails to load this skill.
-  [warning] foundation.agentsmd.bridged (repo)
-            AGENTS.md exists but no CLAUDE.md bridges it. Claude Code reads CLAUDE.md, not AGENTS.md.
+
+Top fixes (estimated score gain):
+  1. +4.8  [additive      ] verify.test-command.documented
+     Document the repository's test command in an entry point so agents can verify their work.
 ```
 
-Machine-readable output for CI:
+### CI usage
 
 ```bash
-airx analyze . --format json -o report.json
-airx analyze . --fail-on error   # exit code 1 if any error-severity finding exists (default)
-airx analyze . --fail-on never   # always exit 0, useful for advisory-only runs
+airx analyze . --format json -o report.json     # canonical machine output
+airx analyze . --format sarif -o airx.sarif     # GitHub code scanning
+airx analyze . --format md                      # PR comment / job summary
+airx analyze . --min-score 70 --fail-on error   # quality gate
+airx compare baseline.json report.json          # exit 1 on regression
 ```
+
+Exit codes: `0` passed · `1` gate failed · `2` input/config error · `3` internal error.
+
+### Configuration (`.airx.yml`)
+
+`airx init` scaffolds it:
+
+```yaml
+profile: standard        # or: minimal, enterprise (weight profiles)
+min_score: 70
+fail_on: error
+ignore:
+  - skills.compat.unverified
+waivers:
+  - rule: skills.present
+    reason: "Domain knowledge lives in an internal plugin marketplace."
+    expires: "2027-01-01"
+    approved_by: platform-team
+```
+
+Waived rules score as satisfied but stay visible in the report. Waiver expiry
+is only evaluated against an explicit date (`--today 2026-07-29` or
+`AIRX_TODAY`) — the scoring path never reads the clock, so output stays
+reproducible.
 
 ## How it works
 
 ```
-path → fs.scan (deterministic, symlink-free traversal)
-     → discovery.build_index (finds SKILL.md, copilot-instructions.md, AGENTS.md, CLAUDE.md)
-     → parser.parse (BOM/CRLF-tolerant YAML-frontmatter + Markdown split)
-     → rules/* (pure functions, one per check, registered in a versioned registry)
-     → scoring.score (presence/quality aggregation per pillar, grade banding)
-     → report.to_json / report.to_terminal
+path → fs.scan            deterministic, symlink-free traversal
+     → discovery          declarative artifact patterns (skills, agents, prompts,
+                          instructions, hooks, MCP, settings — see src/airx/patterns.py)
+     → probe              repo facts: test/build/lint evidence, CI, hygiene
+     → rules/*            94 pure functions, one per check, in a versioned registry
+     → scoring            presence/quality split per pillar, platform sub-scores,
+                          profiles, waivers, grade banding
+     → report/*           terminal | json | markdown | sarif + ranked remediation plan
 ```
 
 Every rule is a pure function of its input. There are no model calls, no
 network access, and no wall-clock or environment dependence anywhere in the
-scoring path — see [`plan.md`](plan.md) §3 for the full determinism contract
-and how it's enforced in tests.
+scoring path — see [`plan.md`](plan.md) §3 for the determinism contract and
+`tests/test_determinism.py` for its enforcement.
 
 ## The scoring model, briefly
 
@@ -110,15 +140,15 @@ exist at all?) and a **quality** score (how good is it?), combined as
 `0.4 × presence + 0.6 × quality`. This makes the score resistant to gaming in
 both directions: deleting every skill scores *worse* than having one flawed
 skill, and duplicating a mediocre skill doesn't inflate the score (it's an
-average, not a sum). See [`plan.md`](plan.md) §6 for the full model,
-including how rules mark themselves "not applicable" rather than distorting
-a ratio they don't belong in.
+average, not a sum). Rules that don't apply are removed from both numerator
+and denominator; a pillar with nothing applicable at all is excluded from the
+weighted overall rather than scoring a vacuous 100%.
 
 **Any error-severity finding caps the overall grade at C**, regardless of the
-arithmetic score — a repository with a skill that silently fails to load is
-not "agent-ready," no matter how good the rest of its configuration looks.
-The cap never *upgrades* an already-worse grade; see `airx/scoring.py` and
-`tests/test_scoring_grade_cap.py`.
+arithmetic score — and error severity is reserved for objective,
+spec-verifiable failures (a skill that silently fails to load, a committed
+credential), never for style heuristics. The cap never *upgrades* an
+already-worse grade.
 
 | Score | Grade | Meaning |
 |---|---|---|
@@ -129,25 +159,29 @@ The cap never *upgrades* an already-worse grade; see `airx/scoring.py` and
 | 35–54  | E | Minimal |
 | 0–34   | F | Not agent-ready |
 
-## Current status
+Every rule is tagged by platform, so the report also carries separate
+`copilot` and `claude` scores and their **parity delta** — a rich `AGENTS.md`
+with no `CLAUDE.md` bridge shows up as a Copilot/Claude gap, not just a
+buried warning.
 
-Implemented today (v0.1.0, see [`CHANGELOG.md`](CHANGELOG.md)):
+## Commands
 
-- ✅ Full pipeline: scan → discover → parse → evaluate → score → report
-- ✅ **Skills pillar** — 30 rules vendored from
-  [AgentEval](https://github.com/YoavLax/AgentEval) (credited, not a runtime
-  dependency — see `src/airx/config.py`)
-- ✅ **Foundation pillar** — entry-point presence, `AGENTS.md`↔`CLAUDE.md`
-  bridge detection, length/structure heuristics
-- ✅ Error-severity grade cap, presence/quality anti-gaming model
-- ✅ `airx analyze` CLI with terminal and JSON output
-- ✅ 33 tests: unit rules, 8 fixture repos, grade-cap proof, byte-for-byte
-  determinism checks; verified against real-world repositories
+```
+airx analyze PATH [--format terminal|json|md|sarif] [-o FILE]
+                  [--profile minimal|standard|enterprise]
+                  [--platform copilot|claude|all]
+                  [--min-score N] [--fail-on error|warning|never]
+                  [--ignore PREFIX]... [--no-waivers] [--today YYYY-MM-DD]
+airx rules        [--format terminal|json|md]     # the catalog; generates docs/RULES.md
+airx compare      OLD.json NEW.json               # regression diff for CI
+airx init         [--force]                       # scaffold .airx.yml
+```
 
-Not yet implemented (see [`plan.md`](plan.md) §12 Roadmap for sequencing):
-Quality / Scoping / Agents / Verification / Tooling / Safety pillars, the
-`airx rules` / `compare` / `init` / `fix` subcommands, HTML/SARIF/Markdown
-reports, waivers, platform sub-scores, and the GitHub Action.
+## Not yet implemented
+
+HTML report, the composite GitHub Action, `airx fix`, duplication detection,
+and nested-monorepo aggregation — see [`plan.md`](plan.md) §12 and
+[`plan-v2-fable.md`](plan-v2-fable.md) §1 for sequencing.
 
 ## Contributing
 
