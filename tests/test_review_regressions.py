@@ -32,6 +32,14 @@ def _repo(root: Path, files: dict[str, str]):
     return build_index(fs.scan(root))
 
 
+def _sanitize(rendered: str, root: Path) -> str:
+    # `root` may contain backslashes on Windows, which json.dumps escapes as
+    # `\\` inside the rendered text; matching the raw path would silently
+    # no-op there, so replace the JSON-escaped form instead.
+    escaped_root = json.dumps(str(root))[1:-1]
+    return rendered.replace(escaped_root, "R")
+
+
 # --- determinism: rule input == scanned tree ---------------------------------
 
 def test_scripts_in_excluded_dirs_are_invisible(tmp_path):
@@ -46,8 +54,8 @@ def test_scripts_in_excluded_dirs_are_invisible(tmp_path):
         ".claude/skills/demo/scripts/__pycache__/gen.py": "input('name? ')\n",
     }))
     assert ia.tree.files == ib.tree.files, "precondition: identical scanned trees"
-    assert to_json(ia, score(ia)).replace(str(ia.root), "R") == \
-           to_json(ib, score(ib)).replace(str(ib.root), "R")
+    assert _sanitize(to_json(ia, score(ia)), ia.root) == \
+           _sanitize(to_json(ib, score(ib)), ib.root)
 
 
 def test_symlinked_script_outside_repo_is_not_read(tmp_path):
@@ -61,11 +69,14 @@ def test_symlinked_script_outside_repo_is_not_read(tmp_path):
     b = tmp_path / "b"
     ia = _repo(a, files)
     ib = _repo(b, files)
-    (b / ".claude/skills/demo/scripts/linked.sh").symlink_to(outside)
+    try:
+        (b / ".claude/skills/demo/scripts/linked.sh").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlink creation requires elevated privilege on this host")
     ib = build_index(fs.scan(b))
     assert ia.tree.files == ib.tree.files
-    assert to_json(ia, score(ia)).replace(str(ia.root), "R") == \
-           to_json(ib, score(ib)).replace(str(ib.root), "R")
+    assert _sanitize(to_json(ia, score(ia)), ia.root) == \
+           _sanitize(to_json(ib, score(ib)), ib.root)
 
 
 def test_links_into_unscanned_dirs_do_not_depend_on_disk(tmp_path):
@@ -75,8 +86,8 @@ def test_links_into_unscanned_dirs_do_not_depend_on_disk(tmp_path):
     ia = _repo(a, files)
     ib = _repo(b, dict(files, **{"node_modules/pkg/index.js": "x\n"}))
     assert ia.tree.files == ib.tree.files
-    assert to_json(ia, score(ia)).replace(str(ia.root), "R") == \
-           to_json(ib, score(ib)).replace(str(ib.root), "R")
+    assert _sanitize(to_json(ia, score(ia)), ia.root) == \
+           _sanitize(to_json(ib, score(ib)), ib.root)
 
 
 def test_parse_error_messages_contain_no_absolute_path(tmp_path):
@@ -178,7 +189,8 @@ def test_third_person_with_bare_you_still_passes(tmp_path):
 
 # --- io / cli ----------------------------------------------------------------
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="chmod 000 is ineffective as root")
+@pytest.mark.skipif(os.name == "nt", reason="chmod 000 is not enforced on Windows")
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="chmod 000 is ineffective as root")
 def test_unreadable_markdown_artifact_degrades_gracefully(tmp_path):
     index_files = {
         ".github/skills/demo/SKILL.md": "---\nname: demo\ndescription: Does a demo when asked.\n---\nBody.\n",
