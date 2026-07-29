@@ -1,0 +1,50 @@
+[project]
+name = "ai-repo-analyzer"
+version = "0.1.0"
+description = "Deterministic AI-readiness scorer for GitHub Copilot and Claude Code repository configuration."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Yoav Lax", email = "yoavfax@gmail.com" }]
+requires-python = ">=3.11"
+keywords = [
+    "ai-agents", "github-copilot", "claude-code", "agent-skills",
+    "static-analysis", "developer-tools", "linter",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "PyYAML>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+
+[project.urls]
+Homepage = "https://github.com/YoavLax/AI-Repo-Analyzer"
+Repository = "https://github.com/YoavLax/AI-Repo-Analyzer"
+Issues = "https://github.com/YoavLax/AI-Repo-Analyzer/issues"
+Changelog = "https://github.com/YoavLax/AI-Repo-Analyzer/blob/main/CHANGELOG.md"
+
+[project.scripts]
+airx = "airx.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
