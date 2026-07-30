@@ -8,7 +8,11 @@ from __future__ import annotations
 import json as _json
 import os
 import re
+import shutil
+import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import click
@@ -23,6 +27,60 @@ from airx.scoring import score
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+# Matches explicit git clone URLs: https://, http://, ssh://, or the
+# scp-like git@host:owner/repo(.git) form.
+_GIT_URL_RE = re.compile(r"^(https?://|ssh://|git@)")
+# Matches a bare "owner/repo" GitHub shorthand (no scheme, no local path
+# separators beyond the single slash).
+_GITHUB_SHORTHAND_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def _resolve_repo_url(path_arg: str) -> str | None:
+    """Return a clonable git URL if PATH_ARG names a remote repo, else None.
+
+    Accepts explicit git URLs (https://, ssh://, git@host:owner/repo) as-is,
+    and expands a bare "owner/repo" shorthand to a GitHub HTTPS URL — but
+    only when no local directory of that name already exists, so real
+    relative paths are never misinterpreted as remote repos.
+    """
+    if _GIT_URL_RE.match(path_arg):
+        return path_arg
+    if _GITHUB_SHORTHAND_RE.match(path_arg) and not Path(path_arg).exists():
+        return f"https://github.com/{path_arg}.git"
+    return None
+
+
+def _rmtree_force(path: Path) -> None:
+    """Remove PATH even if it contains read-only files.
+
+    Git marks files under .git/objects read-only, including on Windows,
+    where plain shutil.rmtree(..., ignore_errors=True) silently fails to
+    delete them and leaves the temp clone behind.
+    """
+    def _on_error(func, target, exc_info):  # noqa: ANN001 - shutil callback signature
+        os.chmod(target, stat.S_IWRITE)
+        func(target)
+
+    shutil.rmtree(path, onerror=_on_error)
+
+
+def _clone_repo(url: str, ref: str | None) -> Path:
+    """Shallow-clone URL into a fresh temp directory and return its path."""
+    if shutil.which("git") is None:
+        raise click.UsageError("git is required to analyze a remote repository but was not found on PATH.")
+    clone_dir = Path(tempfile.mkdtemp(prefix="airx-clone-"))
+    cmd = ["git", "clone", "--depth", "1", "--quiet"]
+    if ref:
+        cmd += ["--branch", ref]
+    cmd += [url, str(clone_dir)]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as exc:
+        _rmtree_force(clone_dir)
+        stderr = (exc.stderr or "").strip()
+        raise click.UsageError(f"failed to clone {url}: {stderr or exc}") from exc
+    return clone_dir
+
 
 @click.group()
 @click.version_option(package_name="ai-repo-analyzer")
@@ -31,7 +89,7 @@ def main() -> None:
 
 
 @main.command()
-@click.argument("path", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("path_arg", metavar="PATH")
 @click.option("--format", "fmt", type=click.Choice(["terminal", "json", "md", "sarif"]), default="terminal")
 @click.option("--fail-on", type=click.Choice(["error", "warning", "never"]), default=None,
               help="Severity gate (default: error, or the .airx.yml value).")
@@ -53,8 +111,10 @@ def main() -> None:
               flag_value="airx-report.html", default=None,
               help="Also write a self-contained, collapsible HTML report "
                    "(default path: airx-report.html when no path is given).")
+@click.option("--ref", default=None,
+              help="Branch, tag, or commit to check out when PATH is a remote repository.")
 def analyze(
-    path: Path,
+    path_arg: str,
     fmt: str,
     fail_on: str | None,
     min_score: float | None,
@@ -66,58 +126,83 @@ def analyze(
     max_files: int,
     output: Path | None,
     html_output: Path | None,
+    ref: str | None,
 ) -> None:
-    """Analyze PATH and print an AI-readiness report."""
+    """Analyze PATH and print an AI-readiness report.
+
+    PATH is a local directory, a git clone URL (https://, ssh://, git@host:...),
+    or a GitHub "owner/repo" shorthand. Remote repos are shallow-cloned to a
+    temporary directory for the duration of the analysis and removed afterwards.
+    """
     if today is None:
         today = os.environ.get("AIRX_TODAY") or None
     if today is not None and not _ISO_DATE_RE.match(today):
         raise click.UsageError("--today must be an ISO date (YYYY-MM-DD)")
 
-    try:
-        airx_config = airxfile.load(path)
-    except airxfile.AirxConfigError as exc:
-        raise click.UsageError(str(exc)) from exc
+    repo_url = _resolve_repo_url(path_arg)
+    if ref is not None and repo_url is None:
+        raise click.UsageError("--ref only applies when PATH is a remote repository.")
 
-    # Precedence: CLI flag > .airx.yml > built-in default.
-    cfg = airx_config or airxfile.AirxConfig()
-    effective_profile = profile or cfg.profile or "standard"
-    effective_fail_on = fail_on or cfg.fail_on or "error"
-    effective_min_score = min_score if min_score is not None else (cfg.min_score or 0.0)
-    if effective_profile not in ("minimal", "standard", "enterprise"):
-        raise click.UsageError(f"unknown profile in .airx.yml: {effective_profile!r}")
-
-    platform = None
-    if platform_name == "copilot":
-        platform = Platform.COPILOT
-    elif platform_name == "claude":
-        platform = Platform.CLAUDE
-
-    tree = fs.scan(path, max_files=max_files)
-    index = build_index(tree)
-    card = score(
-        index,
-        profile=effective_profile,
-        airx=airx_config,
-        today=today,
-        extra_ignore=tuple(ignore_prefixes),
-        no_waivers=no_waivers,
-        platform=platform,
-    )
-
-    renderers = {"terminal": to_terminal, "json": to_json, "md": to_markdown, "sarif": to_sarif}
-    rendered = renderers[fmt](index, card)
-
-    if output is not None:
-        output.write_text(rendered + "\n", encoding="utf-8")
-        click.echo(f"Report saved to: {output}")
+    clone_dir: Path | None = None
+    if repo_url is not None:
+        clone_dir = _clone_repo(repo_url, ref)
+        path = clone_dir
     else:
-        click.echo(rendered)
+        path = Path(path_arg)
+        if not path.is_dir():
+            raise click.UsageError(f"Path '{path_arg}' does not exist or is not a directory.")
 
-    if html_output is not None:
-        html_output.write_text(to_html(index, card), encoding="utf-8")
-        click.echo(f"Report saved to: {html_output}")
+    try:
+        try:
+            airx_config = airxfile.load(path)
+        except airxfile.AirxConfigError as exc:
+            raise click.UsageError(str(exc)) from exc
 
-    sys.exit(_gate_exit_code(card, effective_fail_on, effective_min_score))
+        # Precedence: CLI flag > .airx.yml > built-in default.
+        cfg = airx_config or airxfile.AirxConfig()
+        effective_profile = profile or cfg.profile or "standard"
+        effective_fail_on = fail_on or cfg.fail_on or "error"
+        effective_min_score = min_score if min_score is not None else (cfg.min_score or 0.0)
+        if effective_profile not in ("minimal", "standard", "enterprise"):
+            raise click.UsageError(f"unknown profile in .airx.yml: {effective_profile!r}")
+
+        platform = None
+        if platform_name == "copilot":
+            platform = Platform.COPILOT
+        elif platform_name == "claude":
+            platform = Platform.CLAUDE
+
+        tree = fs.scan(path, max_files=max_files)
+        index = build_index(tree)
+        card = score(
+            index,
+            profile=effective_profile,
+            airx=airx_config,
+            today=today,
+            extra_ignore=tuple(ignore_prefixes),
+            no_waivers=no_waivers,
+            platform=platform,
+        )
+
+        renderers = {"terminal": to_terminal, "json": to_json, "md": to_markdown, "sarif": to_sarif}
+        rendered = renderers[fmt](index, card)
+
+        if output is not None:
+            output.write_text(rendered + "\n", encoding="utf-8")
+            click.echo(f"Report saved to: {output}")
+        else:
+            click.echo(rendered)
+
+        if html_output is not None:
+            html_output.write_text(to_html(index, card), encoding="utf-8")
+            click.echo(f"Report saved to: {html_output}")
+
+        exit_code = _gate_exit_code(card, effective_fail_on, effective_min_score)
+    finally:
+        if clone_dir is not None:
+            _rmtree_force(clone_dir)
+
+    sys.exit(exit_code)
 
 
 def _gate_exit_code(card, fail_on: str, min_score: float) -> int:

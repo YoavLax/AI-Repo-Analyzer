@@ -61,6 +61,15 @@ pip install -e .
 airx analyze /path/to/some/repo
 ```
 
+PATH can also be a remote repository — a GitHub `owner/repo` shorthand or any
+git clone URL (`https://`, `ssh://`, `git@host:...`). It's shallow-cloned to a
+temp directory for the analysis and removed afterwards; requires `git` on PATH.
+
+```bash
+airx analyze YoavLax/AI-Repo-Analyzer
+airx analyze https://github.com/YoavLax/AI-Repo-Analyzer.git --ref main
+```
+
 ```
 AI Readiness Analyzer — /path/to/some/repo
 
@@ -173,10 +182,15 @@ airx analyze PATH [--format terminal|json|md|sarif] [-o FILE]
                   [--platform copilot|claude|all]
                   [--min-score N] [--fail-on error|warning|never]
                   [--ignore PREFIX]... [--no-waivers] [--today YYYY-MM-DD]
+                  [--ref BRANCH|TAG|COMMIT]         # remote PATH only
 airx rules        [--format terminal|json|md]     # the catalog; generates docs/RULES.md
 airx compare      OLD.json NEW.json               # regression diff for CI
 airx init         [--force]                       # scaffold .airx.yml
 ```
+
+`PATH` is a local directory, a GitHub `owner/repo` shorthand, or any git clone
+URL — remote repos are shallow-cloned to a temp directory and cleaned up
+after analysis.
 
 `--html [FILE]` additionally writes a self-contained, offline HTML report
 with collapsible sections (pillars, findings by severity, top fixes, waivers,

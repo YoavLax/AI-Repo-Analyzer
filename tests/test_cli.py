@@ -1,10 +1,12 @@
 """CLI behavior tests (exit codes, subcommands, waivers)."""
 import json
+import shutil
 from pathlib import Path
 
 from click.testing import CliRunner
 
-from airx.cli import main
+from airx import cli
+from airx.cli import _resolve_repo_url, main
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -103,6 +105,50 @@ def test_expired_waiver_with_today_is_not_applied(tmp_path: Path):
 def test_malformed_airx_yml_is_usage_error(tmp_path: Path):
     (tmp_path / ".airx.yml").write_text("waivers: [oops\n", encoding="utf-8")
     result = _run("analyze", str(tmp_path))
+    assert result.exit_code == 2
+
+
+def test_analyze_nonexistent_local_path_is_usage_error(tmp_path: Path):
+    result = _run("analyze", str(tmp_path / "does-not-exist"))
+    assert result.exit_code == 2
+
+
+def test_resolve_repo_url_accepts_explicit_urls():
+    assert _resolve_repo_url("https://github.com/owner/repo") == "https://github.com/owner/repo"
+    assert _resolve_repo_url("https://github.com/owner/repo.git") == "https://github.com/owner/repo.git"
+    assert _resolve_repo_url("git@github.com:owner/repo.git") == "git@github.com:owner/repo.git"
+
+
+def test_resolve_repo_url_expands_github_shorthand():
+    assert _resolve_repo_url("owner/repo") == "https://github.com/owner/repo.git"
+
+
+def test_resolve_repo_url_ignores_existing_local_dirs():
+    # A real local directory that happens to look like "owner/repo" (e.g.
+    # "fixtures/repo_good_skill" relative to cwd) must never be treated as
+    # a remote spec — only a non-existent shorthand path is expanded.
+    assert _resolve_repo_url(str(FIXTURES)) is None
+
+
+def test_analyze_remote_shorthand_clones_and_cleans_up(monkeypatch, tmp_path):
+    captured = {}
+    clone_dest = tmp_path / "cloned"
+
+    def fake_clone(url, ref):
+        captured["url"] = url
+        captured["ref"] = ref
+        shutil.copytree(FIXTURES / "repo_good_skill", clone_dest)
+        return clone_dest
+
+    monkeypatch.setattr(cli, "_clone_repo", fake_clone)
+    result = _run("analyze", "owner/repo", "--ref", "main", "--format", "json", "--fail-on", "never")
+    assert result.exit_code == 0, result.output
+    assert captured == {"url": "https://github.com/owner/repo.git", "ref": "main"}
+    assert not clone_dest.exists()  # temp clone removed after analysis
+
+
+def test_analyze_ref_without_remote_path_is_usage_error():
+    result = _run("analyze", str(FIXTURES / "repo_good_skill"), "--ref", "main")
     assert result.exit_code == 2
 
 
