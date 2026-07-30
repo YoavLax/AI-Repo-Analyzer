@@ -17,7 +17,7 @@ from airx.ingest import (
     parse_github_url,
     select_paths,
 )
-from airx.report import to_json
+from airx.report import to_json_dict
 from airx.scoring import score
 
 SHA = "a" * 40
@@ -127,22 +127,32 @@ def test_select_paths_takes_artifacts_probe_and_skill_dirs():
 
 def test_snapshot_analysis_equals_on_disk_analysis(tmp_path):
     """The clone-free snapshot must produce the byte-identical report of a
-    full checkout of the same tree."""
+    full checkout of the same tree.
+
+    `target.root` is the one legitimately location-dependent field, so it is
+    replaced structurally rather than by string substitution — a raw replace
+    would silently no-op on Windows, where JSON escapes the path separators.
+    """
     disk = tmp_path / "disk"
     for rel, content in REPO_FILES.items():
         p = disk / rel
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
+        # write_bytes, not write_text: on Windows text mode rewrites \n as
+        # \r\n, which would make the "same tree" differ from the snapshot's
+        # raw bytes and change token estimates.
+        p.write_bytes(content.encode("utf-8"))
     disk_index = build_index(fs.scan(disk))
-    disk_report = to_json(disk_index, score(disk_index)).replace(str(disk.resolve()), "R")
+    disk_report = to_json_dict(disk_index, score(disk_index))
+    disk_report["target"] = {"root": "R"}
 
     snap_dir = tmp_path / "snap"
     snap_dir.mkdir()
     tree, stats = fetch_snapshot(RemoteRepo("o", "r"), snap_dir, fetcher=FakeFetcher(REPO_FILES))
     snap_index = build_index(tree)
-    snap_report = to_json(snap_index, score(snap_index)).replace(str(snap_dir.resolve()), "R")
+    snap_report = to_json_dict(snap_index, score(snap_index))
+    snap_report["target"] = {"root": "R"}
 
-    assert snap_report == disk_report
+    assert json.dumps(snap_report, indent=2) == json.dumps(disk_report, indent=2)
     assert stats.listed_files == len(REPO_FILES)
     assert stats.fetched_files == 8
     assert stats.resolved_sha == SHA

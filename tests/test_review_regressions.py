@@ -96,8 +96,12 @@ def test_parse_error_messages_contain_no_absolute_path(tmp_path):
         ".github/skills/bad/SKILL.md": "---\nname: [oops\n---\nBody.\n",
     })
     rendered = to_json(index, score(index))
-    normalized = rendered.replace(json.dumps(str(index.root)), '"ROOT"')
-    assert str(tmp_path) not in normalized, "absolute checkout path leaked beyond target.root"
+    normalized = _sanitize(rendered, index.root).replace(_sanitize(str(tmp_path), tmp_path), "T")
+    # Compare against the JSON-escaped form: on Windows a raw `str(tmp_path)`
+    # containing single backslashes never appears in the rendered JSON, which
+    # would make this assertion pass vacuously.
+    escaped_tmp = json.dumps(str(tmp_path))[1:-1]
+    assert escaped_tmp not in normalized, "absolute checkout path leaked beyond target.root"
 
 
 # --- scoring integrity -------------------------------------------------------
