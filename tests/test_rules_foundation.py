@@ -48,10 +48,12 @@ def test_sections_coverage_partial_lists_missing_sections(tmp_path):
     sat, diags = foundation.check_sections_coverage(_index(root))
     assert sat == 0.2  # k=1 of 5
     assert len(diags) == 1
-    assert diags[0].severity == Severity.INFO
+    path, diag = diags[0]
+    assert path == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.INFO
     for missing in ("techstack", "guidelines", "structure", "resources"):
-        assert missing in diags[0].message
-    assert "overview" not in diags[0].message.split("missing:")[1]
+        assert missing in diag.message
+    assert "overview" not in diag.message.split("missing:")[1]
 
 
 def test_sections_coverage_keyword_in_first_200_body_chars_counts(tmp_path):

@@ -42,6 +42,25 @@ def test_analyze_ignore_prefix_removes_findings():
     assert all(not f["rule_id"].startswith("skills.") for f in data["findings"])
 
 
+def test_analyze_html_writes_report_alongside_primary_output(tmp_path):
+    html_path = tmp_path / "report.html"
+    result = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--fail-on", "never",
+                  "--html", str(html_path))
+    assert result.exit_code == 0
+    content = html_path.read_text(encoding="utf-8")
+    assert content.startswith("<!doctype html>")
+    assert "<details" in content
+    assert f"Report saved to: {html_path}" in result.output
+
+
+def test_analyze_html_flag_without_path_uses_default_filename():
+    with CliRunner().isolated_filesystem():
+        result = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--fail-on", "never", "--html")
+        assert result.exit_code == 0
+        assert Path("airx-report.html").exists()
+        assert "Report saved to: airx-report.html" in result.output
+
+
 def test_analyze_platform_filter_runs():
     result = _run("analyze", str(FIXTURES / "repo_good_skill"), "--platform", "claude", "--fail-on", "never")
     assert result.exit_code == 0

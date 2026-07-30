@@ -17,7 +17,7 @@ import airx.rules  # noqa: F401  (registers built-in rules on import)
 from airx import airxfile, fs
 from airx.discovery import build_index
 from airx.model import Platform, Severity
-from airx.report import to_json, to_markdown, to_sarif, to_terminal
+from airx.report import to_html, to_json, to_markdown, to_sarif, to_terminal
 from airx.rules.registry import RULESET_VERSION, all_rules
 from airx.scoring import score
 
@@ -49,6 +49,10 @@ def main() -> None:
                    "$AIRX_TODAY, else expiry is not evaluated (keeps output deterministic).")
 @click.option("--max-files", type=int, default=fs.DEFAULT_MAX_FILES, help="Traversal cap.")
 @click.option("-o", "--output", type=click.Path(path_type=Path), default=None)
+@click.option("--html", "html_output", type=click.Path(path_type=Path), is_flag=False,
+              flag_value="airx-report.html", default=None,
+              help="Also write a self-contained, collapsible HTML report "
+                   "(default path: airx-report.html when no path is given).")
 def analyze(
     path: Path,
     fmt: str,
@@ -61,6 +65,7 @@ def analyze(
     today: str | None,
     max_files: int,
     output: Path | None,
+    html_output: Path | None,
 ) -> None:
     """Analyze PATH and print an AI-readiness report."""
     if today is None:
@@ -104,8 +109,13 @@ def analyze(
 
     if output is not None:
         output.write_text(rendered + "\n", encoding="utf-8")
+        click.echo(f"Report saved to: {output}")
     else:
         click.echo(rendered)
+
+    if html_output is not None:
+        html_output.write_text(to_html(index, card), encoding="utf-8")
+        click.echo(f"Report saved to: {html_output}")
 
     sys.exit(_gate_exit_code(card, effective_fail_on, effective_min_score))
 

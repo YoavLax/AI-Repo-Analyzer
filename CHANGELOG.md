@@ -8,6 +8,12 @@ report schema and ruleset (see `plan.md` section 3, determinism guarantee D7).
 
 ## [Unreleased]
 
+### Added
+- `--html [FILE]` on `airx analyze`: writes a self-contained, collapsible HTML
+  report (`report/html.py`) alongside the primary output — no CDN assets, no
+  JavaScript (native `<details>/<summary>`), all repo-sourced text escaped.
+  Defaults to `airx-report.html` when no path is given.
+
 ## [0.2.0] — 2026-07-29 — "Fable"
 
 Full-catalog release: every pillar scored, multi-platform sub-scores, waivers,

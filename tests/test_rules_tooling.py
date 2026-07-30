@@ -211,7 +211,9 @@ def test_scripts_documented_violated_with_one_mention(tmp_path):
     _write(tmp_path, "CLAUDE.md", "# Repo\n\nRun `npm run build` before committing.\n")
     sat, diags = rules.check_scripts_documented(_index(tmp_path))
     assert sat == 0.0
-    assert diags[0].severity == Severity.WARNING
+    path, diag = diags[0]
+    assert path == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.WARNING
 
 
 def test_scripts_documented_not_applicable_with_few_scripts(tmp_path):

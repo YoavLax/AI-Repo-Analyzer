@@ -62,6 +62,19 @@ class ArtifactIndex:
         """The always-on entry points that exist, in stable order."""
         return tuple(d for d in (self.copilot_instructions, self.claude_md) if d is not None)
 
+    def entrypoint_paths(self) -> tuple[PurePosixPath, ...]:
+        """Relative paths for `entrypoint_docs()`, in the same order (for
+        diagnostics that must point back at the file to edit)."""
+        paths: list[PurePosixPath] = []
+        if self.copilot_instructions is not None:
+            for a in self.artifacts:
+                if a.kind == ArtifactKind.ENTRYPOINT_COPILOT and a.doc is self.copilot_instructions:
+                    paths.append(a.rel_path)
+                    break
+        if self.claude_md is not None and self.claude_md_path is not None:
+            paths.append(self.claude_md_path)
+        return tuple(paths)
+
 
 def _error_text(exc: Exception) -> str:
     """Stringify a read/parse failure WITHOUT the absolute path (OSError's str

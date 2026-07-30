@@ -132,11 +132,12 @@ def check_agentsmd_bridged(index: ArtifactIndex):
         return None  # N/A: no AGENTS.md to bridge
     if index.claude_md is not None:
         return 1.0, []
-    return 0.0, [Diagnostic(
+    path = sorted(index.agents_md_paths)[0]
+    return 0.0, [(path, Diagnostic(
         rule_id="foundation.agentsmd.bridged", severity=Severity.WARNING,
         message="AGENTS.md exists but no CLAUDE.md bridges it. Claude Code reads CLAUDE.md, not AGENTS.md, "
                 "so this repository's AGENTS.md content is invisible to Claude Code.",
-    )]
+    ))]
 
 
 @rule(
@@ -152,20 +153,21 @@ def check_entrypoint_length(index: ArtifactIndex):
     docs = _entrypoints(index)
     if not docs:
         return None
+    paths = index.entrypoint_paths()
     sats: list[float] = []
-    diags: list[Diagnostic] = []
+    diags: list[tuple] = []
     lo_ideal, hi_ideal = config.ENTRYPOINT_IDEAL_LINES
-    for doc in docs:
+    for doc, path in zip(docs, paths):
         n = doc.line_count
         if lo_ideal <= n <= hi_ideal:
             sats.append(1.0)
         elif n > config.ENTRYPOINT_MAX_LINES_HARD:
             sats.append(0.0)
-            diags.append(Diagnostic(
+            diags.append((path, Diagnostic(
                 rule_id="foundation.entrypoint.length", severity=Severity.WARNING,
                 message=f"{doc.path.name} is {n} lines, well past the recommended ~200-line ceiling; "
                         f"move content to path-scoped instructions or skills.",
-            ))
+            )))
         elif n < 5:
             sats.append(0.2)
         else:
@@ -189,19 +191,20 @@ def check_entrypoint_structured(index: ArtifactIndex):
     docs = _entrypoints(index)
     if not docs:
         return None
+    paths = index.entrypoint_paths()
     sats: list[float] = []
-    diags: list[Diagnostic] = []
-    for doc in docs:
+    diags: list[tuple] = []
+    for doc, path in zip(docs, paths):
         heading_count = len(_HEADING_RE.findall(doc.raw_text))
         if heading_count >= 2:
             sats.append(1.0)
         else:
             sats.append(0.0)
-            diags.append(Diagnostic(
+            diags.append((path, Diagnostic(
                 rule_id="foundation.entrypoint.structured", severity=Severity.WARNING,
                 message=f"{doc.path.name} has {heading_count} heading(s); use Markdown headings to cover "
                         f"project overview, tech stack, guidelines, structure, and resources.",
-            ))
+            )))
     return (sum(sats) / len(sats)), diags
 
 
@@ -222,10 +225,11 @@ def check_sections_coverage(index: ArtifactIndex):
     docs = _entrypoints(index)
     if not docs:
         return None
+    paths = index.entrypoint_paths()
     total = len(_SECTION_SIGNALS)
     sats: list[float] = []
-    diags: list[Diagnostic] = []
-    for doc in docs:
+    diags: list[tuple] = []
+    for doc, path in zip(docs, paths):
         headings = "\n".join(_SECTION_HEADING_RE.findall(doc.body))
         haystack = (headings + "\n" + doc.body[:_SECTION_INTRO_CHARS]).lower()
         missing = [
@@ -235,11 +239,11 @@ def check_sections_coverage(index: ArtifactIndex):
         k = total - len(missing)
         sats.append(k / total)
         if missing:
-            diags.append(Diagnostic(
+            diags.append((path, Diagnostic(
                 rule_id="foundation.sections.coverage", severity=Severity.INFO,
                 message=f"{doc.path.name} covers {k}/{total} core sections; "
                         f"missing: {', '.join(missing)}.",
-            ))
+            )))
     return (sum(sats) / len(sats)), diags
 
 

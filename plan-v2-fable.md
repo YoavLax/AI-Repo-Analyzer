@@ -54,7 +54,7 @@ quarantined exception: waiver expiry).
 - CLI: `airx analyze` (new flags), `airx rules`, `airx compare`, `airx init`.
 - Version 0.2.0; docs (README, CHANGELOG, CONTRIBUTING, generated docs/RULES.md) in English.
 
-**Out (unchanged roadmap, plan.md §12):** HTML report, GitHub Action, `airx fix`,
+**Out (unchanged roadmap, plan.md §12):** GitHub Action, `airx fix`,
 duplication shingling (`scoping.no-duplication`), `portability.platform-parity` as a
 *rule* (the parity delta is reported in the score block instead — a rule cannot observe
 the score being computed), hooks cross-platform/timeout deep checks, tiktoken, fleet/trend.

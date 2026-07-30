@@ -270,22 +270,23 @@ def check_loop_instructed(index: ArtifactIndex):
     docs = index.entrypoint_docs()
     if not docs:
         return None  # N/A: no entry point to carry the instruction
+    paths = index.entrypoint_paths()
     matched = sum(
         1 for pattern in _LOOP_PATTERNS if any(pattern.search(doc.body) for doc in docs)
     )
     if matched >= 2:
         return 1.0, []
     if matched == 1:
-        return 0.5, [Diagnostic(
+        return 0.5, [(path, Diagnostic(
             rule_id="verify.loop.instructed", severity=Severity.WARNING,
             message="The entry point hints at verification but does not instruct a full "
                     "iterate-until-green loop (only one verification cue found).",
-        )]
-    return 0.0, [Diagnostic(
+        )) for path in paths]
+    return 0.0, [(path, Diagnostic(
         rule_id="verify.loop.instructed", severity=Severity.WARNING,
         message="The entry point never instructs the agent to run the tests and iterate "
                 "until they pass.",
-    )]
+    )) for path in paths]
 
 
 @rule(

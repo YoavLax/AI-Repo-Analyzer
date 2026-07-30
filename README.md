@@ -168,6 +168,7 @@ buried warning.
 
 ```
 airx analyze PATH [--format terminal|json|md|sarif] [-o FILE]
+                  [--html [FILE]]
                   [--profile minimal|standard|enterprise]
                   [--platform copilot|claude|all]
                   [--min-score N] [--fail-on error|warning|never]
@@ -177,9 +178,13 @@ airx compare      OLD.json NEW.json               # regression diff for CI
 airx init         [--force]                       # scaffold .airx.yml
 ```
 
+`--html [FILE]` additionally writes a self-contained, offline HTML report
+with collapsible sections (pillars, findings by severity, top fixes, waivers,
+inventory) — default path `airx-report.html` when no `FILE` is given.
+
 ## Not yet implemented
 
-HTML report, the composite GitHub Action, `airx fix`, duplication detection,
+The composite GitHub Action, `airx fix`, duplication detection,
 and nested-monorepo aggregation — see [`plan.md`](plan.md) §12 and
 [`plan-v2-fable.md`](plan-v2-fable.md) §1 for sequencing.
 

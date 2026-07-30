@@ -184,7 +184,9 @@ def test_loop_instructed_absent(tmp_path):
     index = _repo(tmp_path, {"CLAUDE.md": "# Repo\n\nBe kind to reviewers.\n"})
     sat, diags = verification.check_loop_instructed(index)
     assert sat == 0.0
-    assert diags[0].severity == Severity.WARNING
+    path, diag = diags[0]
+    assert path == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.WARNING
 
 
 def test_loop_instructed_na_without_entrypoint(tmp_path):

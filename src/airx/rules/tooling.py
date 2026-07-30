@@ -311,9 +311,11 @@ def check_scripts_documented(index: ArtifactIndex):
     mentioned = tuple(s for s in facts.package_scripts if s in tokens)
     if len(mentioned) >= _MIN_SCRIPTS_DOCUMENTED:
         return 1.0, []
-    return 0.0, [Diagnostic(
-        rule_id="tooling.scripts.documented", severity=Severity.WARNING,
-        message=f"Entry point documents {len(mentioned)} of {len(facts.package_scripts)} "
-                f"package.json scripts as inline code; document at least "
-                f"{_MIN_SCRIPTS_DOCUMENTED} (e.g. `npm run <script>`).",
-    )]
+    message = (
+        f"Entry point documents {len(mentioned)} of {len(facts.package_scripts)} "
+        f"package.json scripts as inline code; document at least "
+        f"{_MIN_SCRIPTS_DOCUMENTED} (e.g. `npm run <script>`)."
+    )
+    return 0.0, [(path, Diagnostic(
+        rule_id="tooling.scripts.documented", severity=Severity.WARNING, message=message,
+    )) for path in index.entrypoint_paths()]

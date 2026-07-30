@@ -4,7 +4,7 @@ from pathlib import Path
 
 from airx import fs
 from airx.discovery import build_index
-from airx.report import to_json, to_json_dict, to_markdown, to_sarif, to_terminal
+from airx.report import to_html, to_json, to_json_dict, to_markdown, to_sarif, to_terminal
 from airx.scoring import score
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -34,7 +34,7 @@ def test_json_keeps_v01_keys_and_adds_v02_keys():
 
 
 def test_all_renderers_are_deterministic():
-    for renderer in (to_json, to_markdown, to_sarif, to_terminal):
+    for renderer in (to_json, to_markdown, to_sarif, to_terminal, to_html):
         index, card = _analyze("repo_bad_skill")
         first = renderer(index, card)
         index2, card2 = _analyze("repo_bad_skill")
@@ -66,3 +66,32 @@ def test_terminal_shows_platform_scores_and_top_fixes():
     text = to_terminal(index, card)
     assert "Platforms:" in text
     assert "Top fixes" in text
+
+
+def test_html_is_self_contained_and_collapsible():
+    index, card = _analyze("repo_bad_skill")
+    html = to_html(index, card)
+    assert html.startswith("<!doctype html>")
+    assert "<script" not in html
+    assert "cdn." not in html
+    assert "<details" in html and "<summary>" in html
+    assert "skills.name.dirname-match" in html
+    assert "Top fixes" in html
+
+
+def test_html_sections_are_collapsed_by_default():
+    index, card = _analyze("repo_bad_skill")
+    html = to_html(index, card)
+    # Every collapsible section starts closed (no bare `open` attribute).
+    assert "<details open" not in html
+    assert html.count("<details class=\"section\">") > 0
+
+
+def test_html_escapes_untrusted_content():
+    index, card = _analyze("repo_bad_skill")
+    data = to_json_dict(index, card)
+    data["findings"][0]["message"] = "<img src=x onerror=alert(1)>"
+    from airx.report.html import _render_findings
+    rendered = _render_findings(data)
+    assert "<img src=x" not in rendered
+    assert "&lt;img" in rendered
