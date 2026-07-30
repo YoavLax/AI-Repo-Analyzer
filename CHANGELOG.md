@@ -6,13 +6,80 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/) for its
 report schema and ruleset (see `plan.md` section 3, determinism guarantee D7).
 
-## [Unreleased]
+## [Unreleased] — 0.3.0 — "CodeCompass"
+
+CodeCompass — AI-powered repository understanding: a web UI over the analyzer.
+Paste a public GitHub URL, get the full report, no clone. Design and rationale
+in [`plan-v3-codecompass.md`](plan-v3-codecompass.md). The scoring pipeline,
+report schema, and determinism contract are untouched — ingest happens before
+the pipeline, exactly like the CLI's clone path.
 
 ### Added
+- **CodeCompass web UI** (`web/`): React 18 + TypeScript + Vite + Tailwind
+  single-page app — URL input hero, score ring with grade, Copilot/Claude
+  platform bars with parity delta, pillar table, findings with severity
+  filters, top-fixes cards, waivers panel, light/dark theme.
+- **Clone-free GitHub ingest** (`src/airx/ingest.py`, stdlib-only): one
+  GitHub Trees API call lists the full tree, then only the files the rules
+  actually read are fetched from `raw.githubusercontent.com` — classified
+  artifacts, the four probe files, and skill directories. The snapshot is
+  pinned to a single resolved commit SHA; caps enforced (≤ 400 fetched files,
+  ≤ 2 MB/file, ≤ 20 MB total); symlink blobs and unsafe paths are dropped;
+  truncated trees, 404s, and rate limits map to clear `IngestError`s. Only
+  `api.github.com` and `raw.githubusercontent.com` are ever contacted, with
+  an injectable fetcher so tests never touch the network.
+- **`airx_server` FastAPI app** (`src/airx_server/`): `POST /api/analyze`
+  (GitHub source, or a confined local path when `ALLOW_LOCAL_PATHS=true`)
+  returning the canonical report plus a `meta` block; `GET /api/health`;
+  `GET /api/version`; SPA static serving from `STATIC_DIR` with an
+  `index.html` fallback; `{"error": {"code", "message"}}` problem bodies;
+  a concurrency gate (`MAX_CONCURRENT_ANALYSES`, default 4). FastAPI is
+  imported lazily so the base library install stays dependency-free.
+- **Containers & deployment**: multi-stage `Dockerfile` (Node builds
+  `web/dist`, Python slim runtime, non-root user, healthcheck on
+  `/api/health`), `docker-compose.yml` with a commented private-repos
+  local-path block, and a Helm chart (`deploy/helm/codecompass`) with
+  probes, security context, optional ingress/HPA, and a `localRepos` mode.
+- **New extras** in `pyproject.toml`: `web = [fastapi, uvicorn]`; the `dev`
+  extra grows fastapi + uvicorn + httpx (for Starlette's TestClient).
+- **CI additions**: a `web` job (Node 20 typecheck + build), a `docker` job
+  (image build + container smoke test against `/api/health`), and a `helm`
+  job (`helm lint` + `helm template`), alongside the unchanged Python matrix.
+- **Tests**: `tests/test_ingest.py` (URL parsing, selection logic, caps,
+  error mapping, and an end-to-end proof that a clone-free snapshot scores
+  identically to the same tree analyzed from disk) and
+  `tests/test_server.py` (API contract, error statuses, local-path
+  confinement incl. traversal/symlink escapes, SPA fallback) — all against
+  a fake fetcher, no network.
 - `--html [FILE]` on `airx analyze`: writes a self-contained, collapsible HTML
   report (`report/html.py`) alongside the primary output — no CDN assets, no
   JavaScript (native `<details>/<summary>`), all repo-sourced text escaped.
   Defaults to `airx-report.html` when no path is given.
+- Remote analysis for the CLI: `airx analyze owner/repo` or a clone URL,
+  shallow-cloned to a temp directory and removed afterwards.
+
+### Fixed (found by the pre-release adversarial review)
+- **SSRF containment now holds across redirects.** The host allowlist was
+  applied only to the initial URL, so a 3xx from GitHub could send the request
+  — and the `GITHUB_TOKEN` header, which CPython forwards across hosts and
+  even across an https→http downgrade — to an arbitrary host. Redirects are
+  re-validated per hop and the token is stripped off `api.github.com`.
+- **Response reads are capped at read time** (2 MB per file, 64 MB per API
+  response) instead of after the whole body was buffered.
+- **`/api/analyze` no longer starves the server.** A blocking semaphore in a
+  sync endpoint parked Starlette's shared threadpool, so concurrent analyses
+  made `/api/health` hang (and Kubernetes liveness kill the pod). The endpoint
+  is async, the gate is an `asyncio.Semaphore` keyed per event loop, and the
+  CPU-bound pipeline runs in an executor.
+- **Web scores match CLI scores.** Ingest now prunes the same vendored
+  directories `fs.scan` excludes (committed `node_modules/`, `dist/`, …), and
+  the analyzed repository's own `.airx.yml` (profile, ignores, waivers) is
+  fetched and applied; a malformed one returns 422 instead of being ignored.
+- Read-phase network failures map to 502 with a message instead of an opaque
+  500; `airx_server.app.app` is a cached singleton; request-validation errors
+  use the documented `{"error": {...}}` shape; `/tree/` URLs with a trailing
+  slash no longer produce a bogus ref; `.dockerignore` excludes `**/*.egg-info`
+  so build metadata stays out of the image.
 
 ## [0.2.0] — 2026-07-29 — "Fable"
 

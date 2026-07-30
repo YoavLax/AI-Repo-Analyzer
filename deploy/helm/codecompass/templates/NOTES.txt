@@ -1,0 +1,33 @@
+CodeCompass {{ .Chart.AppVersion }} has been deployed.
+
+1. Reach the application:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+{{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+{{- end }}
+{{- end }}
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward \
+    svc/{{ include "codecompass.fullname" . }} 8080:{{ .Values.service.port }}
+  open http://localhost:8080
+{{- end }}
+
+2. Analyze a repository from the command line:
+  curl -s -X POST http://localhost:8080/api/analyze \
+    -H 'Content-Type: application/json' \
+    -d '{"source": "owner/repo"}'
+
+{{- if not .Values.github.tokenSecretName }}
+
+Tip: without a GitHub token the API allows only 60 requests/hour. Create a
+secret and set github.tokenSecretName to raise it to 5000:
+  kubectl create secret generic codecompass-github \
+    --from-literal=github-token=ghp_yourtoken
+  helm upgrade {{ .Release.Name }} <chart> --set github.tokenSecretName=codecompass-github
+{{- end }}
+{{- if .Values.localRepos.enabled }}
+
+Local-repos mode is ENABLED: repositories mounted at /repos can be analyzed
+with POST /api/analyze {"path": "<repo-dir-name>"}.
+{{- end }}

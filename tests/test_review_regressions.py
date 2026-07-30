@@ -255,3 +255,157 @@ def test_settings_unknown_key_renders_error_finding(tmp_path):
     assert "safety.settings.valid" in error_rules, (
         "gate fires => an error-severity finding must be visible to fix"
     )
+
+
+# --- CodeCompass (v0.3.0) review regressions ---------------------------------
+
+def test_ingest_listing_excludes_vendored_dirs_like_fs_scan():
+    """A repository that commits node_modules/dist must score the same via the
+    online scan as via a clone — fs.scan prunes those dirs, so ingest must too."""
+    from airx.ingest import _safe_rel_path
+
+    assert _safe_rel_path("src/app.py") is not None
+    assert _safe_rel_path("node_modules/pkg/index.js") is None
+    assert _safe_rel_path("dist/bundle.js") is None
+    assert _safe_rel_path("a/__pycache__/x.pyc") is None
+    # The exclusion applies to directory components only, never the file name.
+    assert _safe_rel_path("dist") is not None
+
+
+def test_ingest_redirect_off_github_is_refused():
+    """The allowlist must hold on every hop: urlopen otherwise follows 3xx to
+    any host and forwards the Authorization header with it."""
+    import email.message
+
+    from airx.ingest import API_HOST, IngestError, _GitHubOnlyRedirectHandler
+
+    handler = _GitHubOnlyRedirectHandler()
+    headers = email.message.Message()
+    request = __import__("urllib.request", fromlist=["request"]).Request(
+        f"{API_HOST}/repos/o/r", headers={"Authorization": "Bearer secret"},
+    )
+    with pytest.raises(IngestError):
+        handler.redirect_request(request, None, 302, "Found", headers,
+                                 "http://169.254.169.254/latest/meta-data/")
+
+
+def test_ingest_redirect_to_raw_host_drops_the_token():
+    import email.message
+    import urllib.request
+
+    from airx.ingest import API_HOST, RAW_HOST, _GitHubOnlyRedirectHandler
+
+    handler = _GitHubOnlyRedirectHandler()
+    request = urllib.request.Request(
+        f"{API_HOST}/repos/o/r", headers={"Authorization": "Bearer secret"},
+    )
+    new = handler.redirect_request(request, None, 302, "Found", email.message.Message(),
+                                   f"{RAW_HOST}/o/r/sha/README.md")
+    assert new is not None
+    assert not any(name.lower() == "authorization" for name in new.headers)
+
+
+def test_ingest_tree_url_with_subdirectory_strips_trailing_slash():
+    from airx.ingest import parse_github_url
+
+    assert parse_github_url("https://github.com/o/r/tree/main/").ref == "main"
+    assert parse_github_url("https://github.com/o/r/").ref is None
+
+
+def test_server_honors_repository_airx_yml():
+    """A web analysis must apply the analyzed repo's own .airx.yml, exactly as
+    `airx analyze` would — otherwise web and CLI scores diverge."""
+    fastapi = pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from airx_server.app import create_app
+    from airx_server.config import Settings
+    from tests.test_ingest import REPO_FILES, FakeFetcher
+
+    settings = Settings(allow_local_paths=False, local_repos_root=None,
+                        static_dir=None, max_concurrent_analyses=2)
+    waived = dict(REPO_FILES)
+    waived[".airx.yml"] = (
+        "waivers:\n"
+        "  - rule: skills.present\n"
+        "    reason: 'Skills live in an internal marketplace.'\n"
+    )
+    client = TestClient(create_app(settings, fetcher=FakeFetcher(waived)))
+    data = client.post("/api/analyze", json={"source": "o/r"}).json()
+    assert [w["rule"] for w in data["waivers"]] == ["skills.present"]
+
+
+def test_server_rejects_malformed_repository_airx_yml():
+    fastapi = pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from airx_server.app import create_app
+    from airx_server.config import Settings
+    from tests.test_ingest import REPO_FILES, FakeFetcher
+
+    settings = Settings(allow_local_paths=False, local_repos_root=None,
+                        static_dir=None, max_concurrent_analyses=2)
+    broken = dict(REPO_FILES)
+    broken[".airx.yml"] = "waivers: [unterminated\n"
+    client = TestClient(create_app(settings, fetcher=FakeFetcher(broken)))
+    response = client.post("/api/analyze", json={"source": "o/r"})
+    assert response.status_code == 422
+    assert ".airx.yml" in response.json()["error"]["message"]
+
+
+def test_server_validation_errors_use_the_documented_error_shape():
+    fastapi = pytest.importorskip("fastapi")
+    from fastapi.testclient import TestClient
+
+    from airx_server.app import create_app
+    from airx_server.config import Settings
+
+    settings = Settings(allow_local_paths=False, local_repos_root=None,
+                        static_dir=None, max_concurrent_analyses=2)
+    client = TestClient(create_app(settings))
+    response = client.post("/api/analyze", json={"source": 12345})
+    assert response.status_code == 400
+    assert set(response.json()) == {"error"}
+    assert set(response.json()["error"]) == {"code", "message"}
+
+
+def test_server_app_attribute_is_a_cached_singleton():
+    pytest.importorskip("fastapi")
+    import airx_server.app as module
+
+    assert module.app is module.app
+
+
+def test_server_gate_is_bound_per_event_loop():
+    """One app object served from several event loops must not raise
+    'Semaphore is bound to a different event loop'."""
+    pytest.importorskip("fastapi")
+    import threading
+    from fastapi.testclient import TestClient
+
+    from airx_server.app import create_app
+    from airx_server.config import Settings
+    from tests.test_ingest import REPO_FILES, FakeFetcher
+
+    app = create_app(
+        Settings(allow_local_paths=False, local_repos_root=None, static_dir=None,
+                 max_concurrent_analyses=1),
+        fetcher=FakeFetcher(REPO_FILES),
+    )
+    statuses: list[int] = []
+    errors: list[str] = []
+
+    def call() -> None:
+        try:
+            with TestClient(app) as client:  # each client runs its own loop
+                statuses.append(client.post("/api/analyze", json={"source": "o/r"}).status_code)
+        except Exception as exc:  # noqa: BLE001 - the regression is any exception
+            errors.append(repr(exc))
+
+    threads = [threading.Thread(target=call) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert errors == []
+    assert statuses == [200, 200, 200, 200]

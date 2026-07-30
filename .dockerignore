@@ -1,0 +1,31 @@
+# Version control and local environments
+.git
+.gitignore
+.venv
+venv
+
+# Node — the web stage runs npm ci / npm run build inside the image
+node_modules
+web/node_modules
+web/dist
+
+# Python build/test artifacts
+**/__pycache__
+*.pyc
+**/*.egg-info
+.pytest_cache
+build
+dist
+
+# Not needed inside the image
+tests
+docs
+.github
+.claude
+deploy
+docker-compose.yml
+Dockerfile
+
+# Markdown: exclude everything except README.md (pyproject metadata reads it)
+*.md
+!README.md

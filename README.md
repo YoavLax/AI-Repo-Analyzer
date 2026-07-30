@@ -124,6 +124,64 @@ is only evaluated against an explicit date (`--today 2026-07-29` or
 `AIRX_TODAY`) — the scoring path never reads the clock, so output stays
 reproducible.
 
+## CodeCompass — the web UI
+
+**CodeCompass** — AI-powered repository understanding. Paste a public GitHub
+repository URL into the browser, get the full report: overall score and grade,
+Copilot/Claude platform bars, per-pillar breakdown, filterable findings, and
+the ranked top fixes.
+
+The scan is **clone-free**: one GitHub Trees API call lists every file in the
+repository, and only the files the rules actually read — classified AI
+artifacts, the four probe files, skill directories — are fetched (kilobytes,
+not the repo). Name-only rules see the complete listing, content rules see
+real files, and the whole snapshot is pinned to a single commit SHA. Nothing
+is persisted; each request is self-contained.
+
+### Run it
+
+```bash
+docker compose up          # then open http://localhost:8080
+```
+
+Or without Docker:
+
+```bash
+pip install -e ".[dev]"                     # server deps (or ".[web]" for runtime only)
+cd web && npm install && npm run build      # → web/dist
+cd .. && STATIC_DIR=web/dist uvicorn airx_server.app:app --port 8080
+```
+
+### Server configuration
+
+All configuration is environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GITHUB_TOKEN` | unset | Token for the online scan's GitHub API calls (raises the rate limit from 60 to 5,000 req/h); sent only to `api.github.com` |
+| `ALLOW_LOCAL_PATHS` | `false` | Enable analyzing repositories mounted on the server (local-path mode) |
+| `LOCAL_REPOS_ROOT` | unset | Root directory local-path analyses are strictly confined to |
+| `STATIC_DIR` | unset | Directory of the built SPA (`web/dist`) to serve |
+| `MAX_CONCURRENT_ANALYSES` | `4` | Cap on simultaneous analyses |
+
+### API
+
+- `POST /api/analyze` with `{"source": "<github url or owner/repo>", "ref": null}`
+  — or `{"path": "<relative path>"}` in local-path mode — returns the canonical
+  JSON report plus a `meta` block (`source`, `ref`, `resolved_sha`,
+  `listed_files`, `fetched_files`, `duration_ms`). Errors come back as
+  `{"error": {"code", "message"}}` with `400`/`404`/`413`/`422`/`429`.
+- `GET /api/health` — liveness. `GET /api/version` — `{version, local_mode}`.
+
+### Private repositories
+
+The online scan only reaches public GitHub. For private code, self-host
+CodeCompass next to your repositories: mount them read-only into the
+container, set `ALLOW_LOCAL_PATHS=true` and `LOCAL_REPOS_ROOT`, and analyze by
+relative path — the analysis itself never touches the network. A Helm chart
+for Kubernetes deployments lives at `deploy/helm/codecompass`; see
+[`deploy/README.md`](deploy/README.md) for both setups.
+
 ## How it works
 
 ```

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <defs>
+    <linearGradient id="cc-grad" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2970FF"/>
+      <stop offset="1" stop-color="#7F56D9"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .needle { fill: #101828; }
+    @media (prefers-color-scheme: dark) { .needle { fill: #FFFFFF; } }
+  </style>
+  <!-- Compass rose: 4 large cardinal wedges + 4 small diagonal wedges -->
+  <g fill="url(#cc-grad)">
+    <path d="M24 1 L27.4 12.6 L24 10.9 L20.6 12.6 Z"/>
+    <path d="M24 1 L27.4 12.6 L24 10.9 L20.6 12.6 Z" transform="rotate(90 24 24)"/>
+    <path d="M24 1 L27.4 12.6 L24 10.9 L20.6 12.6 Z" transform="rotate(180 24 24)"/>
+    <path d="M24 1 L27.4 12.6 L24 10.9 L20.6 12.6 Z" transform="rotate(270 24 24)"/>
+    <path d="M24 6.5 L26.5 14.4 L24 13.2 L21.5 14.4 Z" transform="rotate(45 24 24)"/>
+    <path d="M24 6.5 L26.5 14.4 L24 13.2 L21.5 14.4 Z" transform="rotate(135 24 24)"/>
+    <path d="M24 6.5 L26.5 14.4 L24 13.2 L21.5 14.4 Z" transform="rotate(225 24 24)"/>
+    <path d="M24 6.5 L26.5 14.4 L24 13.2 L21.5 14.4 Z" transform="rotate(315 24 24)"/>
+  </g>
+  <!-- Inner ring -->
+  <circle cx="24" cy="24" r="9.75" fill="none" stroke="url(#cc-grad)" stroke-width="2.5"/>
+  <!-- Needle: two mirrored kites rotated 45deg, with center dot -->
+  <g transform="rotate(45 24 24)">
+    <path class="needle" d="M24 16.5 L26.2 24 L24 22.9 L21.8 24 Z"/>
+    <path class="needle" d="M24 31.5 L26.2 24 L24 25.1 L21.8 24 Z" opacity="0.55"/>
+  </g>
+  <circle cx="24" cy="24" r="1.9" fill="url(#cc-grad)"/>
+</svg>

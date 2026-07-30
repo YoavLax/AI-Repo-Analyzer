@@ -1,0 +1,12 @@
+apiVersion: v2
+name: codecompass
+description: AI-powered repository understanding — clone-free AI-readiness reports for GitHub repositories.
+type: application
+version: 0.1.0
+appVersion: "0.3.0"
+keywords:
+  - ai-readiness
+  - static-analysis
+  - developer-tools
+sources:
+  - https://github.com/YoavLax/AI-Repo-Analyzer
