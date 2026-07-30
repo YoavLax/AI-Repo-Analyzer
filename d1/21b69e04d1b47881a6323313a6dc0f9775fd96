@@ -1,0 +1,28 @@
+src/airx/cli.py
+  s_ad5b2658f33a5d::t_a7645cc47b8470 11,13,15,30-52,67-78,80-83
+  s_ad5b2658f33a5d::t_2d978f69fef672 12,79,203
+  s_ad5b2658f33a5d::t_275eefdfc5dd99 53-66
+  s_ad5b2658f33a5d::t_87339d3165663a 92,114-115,117,129,131-136,142-144,146-149,151-153,155-202,204-205
+tests/test_cli.py
+  s_ad5b2658f33a5d::t_8936ea55b36aef 3,8-9
+  s_ad5b2658f33a5d::t_9dcfeadc45daf0 111-154
+README.md
+  s_ad5b2658f33a5d::t_f2d1fcccc73bb2 185,191-193
+  s_ad5b2658f33a5d::t_62f75f57cdbec1 64-72,194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d121b69e04d1b47881a6323313a6dc0f9775fd96",
+  "prompts": {},
+  "sessions": {
+    "s_ad5b2658f33a5d": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "5e9fc34d-9fbf-40f2-af3d-e03477fea23e",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
