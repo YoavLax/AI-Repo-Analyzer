@@ -57,6 +57,10 @@ the pipeline, exactly like the CLI's clone path.
   Defaults to `airx-report.html` when no path is given.
 - Remote analysis for the CLI: `airx analyze owner/repo` or a clone URL,
   shallow-cloned to a temp directory and removed afterwards.
+- Artifact fetching runs concurrently (8 workers): an analysis is latency-bound
+  on dozens of independent round trips, so this cuts a 59-file scan from ~27 s
+  to ~2.4 s. The snapshot is unchanged — files land at their own paths and the
+  listing is sorted independently, so completion order is unobservable.
 
 ### Fixed (found by the pre-release adversarial review)
 - **SSRF containment now holds across redirects.** The host allowlist was

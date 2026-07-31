@@ -238,3 +238,50 @@ def test_ref_pinning_uses_commit_sha_for_raw(tmp_path):
     fetch_snapshot(RemoteRepo("o", "r", ref="dev"), tmp_path, fetcher=fetcher)
     assert fetcher.raw_urls
     assert all(f"/{SHA}/" in url for url in fetcher.raw_urls)
+
+
+def test_parallel_fetch_is_deterministic_and_complete(tmp_path):
+    """Concurrent fetching must not change the materialized snapshot: same
+    files, same bytes, same report as a serial fetch."""
+    import airx.ingest as ingest
+
+    serial_dir = tmp_path / "serial"
+    serial_dir.mkdir()
+    original = ingest.FETCH_CONCURRENCY
+    ingest.FETCH_CONCURRENCY = 1
+    try:
+        serial_tree, serial_stats = fetch_snapshot(
+            RemoteRepo("o", "r"), serial_dir, fetcher=FakeFetcher(REPO_FILES),
+        )
+    finally:
+        ingest.FETCH_CONCURRENCY = original
+
+    parallel_dir = tmp_path / "parallel"
+    parallel_dir.mkdir()
+    parallel_tree, parallel_stats = fetch_snapshot(
+        RemoteRepo("o", "r"), parallel_dir, fetcher=FakeFetcher(REPO_FILES),
+    )
+
+    assert parallel_tree.files == serial_tree.files
+    assert parallel_stats.fetched_files == serial_stats.fetched_files
+    assert parallel_stats.fetched_bytes == serial_stats.fetched_bytes
+    for rel in select_paths(serial_tree.files):
+        assert (parallel_dir / str(rel)).read_bytes() == (serial_dir / str(rel)).read_bytes()
+
+    serial_index = build_index(serial_tree)
+    parallel_index = build_index(parallel_tree)
+    serial_report = to_json_dict(serial_index, score(serial_index))
+    parallel_report = to_json_dict(parallel_index, score(parallel_index))
+    serial_report["target"] = parallel_report["target"] = {"root": "R"}
+    assert parallel_report == serial_report
+
+
+def test_fetch_error_propagates_from_a_worker(tmp_path):
+    class Failing(FakeFetcher):
+        def get_raw(self, url: str) -> bytes:
+            if url.endswith("CLAUDE.md"):
+                raise IngestError("boom", 502)
+            return super().get_raw(url)
+
+    with pytest.raises(IngestError):
+        fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=Failing(REPO_FILES))

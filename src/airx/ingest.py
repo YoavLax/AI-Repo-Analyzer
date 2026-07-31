@@ -15,6 +15,7 @@ suite never touches the network, and only two hosts are ever contacted:
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import re
@@ -38,6 +39,9 @@ MAX_TOTAL_BYTES = 20 * 1024 * 1024
 #: bounded, but far above the per-file cap.
 MAX_API_RESPONSE_BYTES = 64 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 30
+#: Parallel raw-file fetches. Bounded to stay well inside GitHub's abuse
+#: limits while turning dozens of sequential round trips into a few batches.
+FETCH_CONCURRENCY = 8
 
 #: Files probe.py reads by content; everything else it derives from names.
 #: `.airx.yml` is included so a web analysis honors the same repository
@@ -321,11 +325,11 @@ def fetch_snapshot(
         )
 
     workdir = workdir.resolve()
-    total = 0
-    for rel in selected:
+
+    def _fetch_one(rel: PurePosixPath) -> tuple[PurePosixPath, bytes]:
         url = f"{RAW_HOST}/{owner}/{repo}/{sha}/{urllib.parse.quote(rel.as_posix())}"
         try:
-            content = fetcher.get_raw(url)
+            return rel, fetcher.get_raw(url)
         except IngestError:
             raise
         except urllib.error.HTTPError as exc:
@@ -334,12 +338,27 @@ def fetch_snapshot(
             raise IngestError(f"GitHub is unreachable: {exc.reason}", 502) from exc
         except OSError as exc:
             raise IngestError(f"GitHub request failed: {exc}", 502) from exc
-        total += len(content)
-        if len(content) > MAX_FILE_BYTES or total > MAX_TOTAL_BYTES:
-            raise IngestError("fetch size limit exceeded mid-download", 413)
-        target = workdir / str(rel)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+
+    # Fetches run concurrently — the files are independent and the request is
+    # latency-bound (dozens of round trips to raw.githubusercontent.com).
+    # Determinism is unaffected: the tree listing is sorted independently and
+    # each file lands at its own path, so completion order cannot be observed.
+    total = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_CONCURRENCY) as pool:
+        futures = [pool.submit(_fetch_one, rel) for rel in selected]
+        try:
+            for future in concurrent.futures.as_completed(futures):
+                rel, content = future.result()
+                total += len(content)
+                if len(content) > MAX_FILE_BYTES or total > MAX_TOTAL_BYTES:
+                    raise IngestError("fetch size limit exceeded mid-download", 413)
+                target = workdir / str(rel)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(content)
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
 
     tree = RepoTree(root=workdir, files=tuple(listed))
     stats = SnapshotStats(
