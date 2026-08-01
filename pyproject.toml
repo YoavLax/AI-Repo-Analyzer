@@ -1,6 +1,6 @@
 [project]
 name = "ai-repo-analyzer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Deterministic AI-readiness scorer for GitHub Copilot and Claude Code repository configuration."
 readme = "README.md"
 license = { text = "MIT" }
@@ -28,7 +28,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.4"]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
+dev = ["pytest>=7.4", "fastapi>=0.110", "uvicorn[standard]>=0.29", "httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://github.com/YoavLax/AI-Repo-Analyzer"

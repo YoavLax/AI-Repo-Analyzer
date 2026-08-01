@@ -1,0 +1,45 @@
+@import "@fontsource-variable/inter";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-gray-50 font-sans text-sm text-gray-600 dark:bg-night-page dark:text-night-muted;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply text-gray-900 dark:text-night-text;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-gray-200 bg-white shadow-card dark:border-night-border dark:bg-night-card;
+  }
+  .focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50 dark:focus-visible:ring-primary-400 dark:focus-visible:ring-offset-night-page;
+  }
+  .text-gradient {
+    @apply bg-brand bg-clip-text text-transparent;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-gray-100 dark:bg-night-border;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

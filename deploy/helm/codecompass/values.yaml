@@ -1,0 +1,99 @@
+# Default values for the CodeCompass chart.
+
+image:
+  repository: codecompass
+  # Defaults to the chart appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 2
+
+serviceAccount:
+  # Create a dedicated ServiceAccount for the deployment.
+  create: true
+  annotations: {}
+  # Name of the ServiceAccount to use; generated from the fullname when empty.
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: codecompass.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: codecompass-tls
+  #    hosts:
+  #      - codecompass.example.com
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# GitHub API token (optional; raises the rate limit from 60 to 5000 req/h).
+# Create the secret first, e.g.:
+#   kubectl create secret generic codecompass-github \
+#     --from-literal=github-token=ghp_yourtoken
+github:
+  tokenSecretName: ""
+  tokenSecretKey: github-token
+
+# Private-repos self-hosting: mount local clones read-only at /repos and
+# enable local-path analysis (ALLOW_LOCAL_PATHS=true, LOCAL_REPOS_ROOT=/repos).
+# Provide exactly one of existingClaim (PVC name) or hostPath.
+localRepos:
+  enabled: false
+  existingClaim: ""
+  hostPath: ""
+
+# Extra environment variables for the container, e.g.:
+#   env:
+#     - name: MAX_CONCURRENT_ANALYSES
+#       value: "8"
+env: []
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container-level security context. The root filesystem is read-only; a
+# writable emptyDir is mounted at /tmp for snapshot materialization.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

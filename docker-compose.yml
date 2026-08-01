@@ -1,0 +1,43 @@
+# CodeCompass — docker compose quickstart (plan-v3-codecompass.md §5).
+#
+#   GITHUB_TOKEN=ghp_xxx docker compose up --build
+#   open http://localhost:8080
+#
+# GITHUB_TOKEN is optional but raises the GitHub API rate limit from 60 to
+# 5000 requests/hour.
+
+services:
+  codecompass:
+    build: .
+    image: codecompass:latest
+    ports:
+      - "8080:8080"
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # --- Private-repos self-hosting ------------------------------------------
+    # To analyze repositories that never leave your network, mount local clones
+    # read-only and enable local-path mode. Replace the `environment:` block
+    # above with the one below and uncomment `volumes:`. Then POST
+    # {"path": "<repo-dir-name>"} to /api/analyze (paths are confined to
+    # LOCAL_REPOS_ROOT; traversal and symlink escapes are rejected).
+    #
+    # environment:
+    #   GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    #   ALLOW_LOCAL_PATHS: "true"
+    #   LOCAL_REPOS_ROOT: /repos
+    # volumes:
+    #   - ./repos:/repos:ro
