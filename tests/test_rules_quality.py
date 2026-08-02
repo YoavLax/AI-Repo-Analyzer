@@ -370,6 +370,35 @@ def test_links_resolve_not_applicable_without_relative_links(tmp_path):
     assert quality.check_links_resolve(index) is None
 
 
+def test_links_resolve_accepts_repo_root_relative_link_from_subdir_entrypoint(tmp_path):
+    # A link written in .github/copilot-instructions.md as "src/foo.ts" is a
+    # common convention meaning "repo-root-relative", even though it resolves
+    # to .github/src/foo.ts (and 404s) under strict browser link semantics.
+    # Agents resolve paths via their file-access tools using the repo root,
+    # so this must not be flagged.
+    _write(tmp_path, "src/foo.ts", "export {};\n")
+    _write(
+        tmp_path, ".github/copilot-instructions.md",
+        "# Instructions\n\n- [src/foo.ts](src/foo.ts) - does the thing\n",
+    )
+    index = _index(tmp_path)
+    sat, diags = quality.check_links_resolve(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_links_resolve_still_flags_link_missing_under_both_interpretations(tmp_path):
+    _write(
+        tmp_path, ".github/copilot-instructions.md",
+        "# Instructions\n\n- [src/missing.ts](src/missing.ts) - nope\n",
+    )
+    index = _index(tmp_path)
+    sat, diags = quality.check_links_resolve(index)
+    assert sat == 0.0
+    _rel, diag = diags[0]
+    assert "src/missing.ts" in diag.message
+
+
 # --- committed fixture: repo_quality_rich -------------------------------------
 
 def test_repo_quality_rich_scores_well_across_all_rules():

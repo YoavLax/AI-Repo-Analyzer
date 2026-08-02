@@ -489,12 +489,23 @@ def check_links_resolve(index: ArtifactIndex):
         file_diags: list[Diagnostic] = []
         for ref in refs:
             target = posixpath.normpath(posixpath.join(posixpath.dirname(str(rel)), ref))
+            # Agents (the audience this rule protects, per `why` above) almost
+            # universally resolve paths mentioned in instructions relative to
+            # the repository root via their file-access tools, not relative
+            # to the directory of the instructions file that mentioned them
+            # (unlike a browser resolving a rendered Markdown link's href).
+            # Treat a link as resolved if it works under *either* reading, and
+            # only report "escapes the repository root" when neither does and
+            # the author's own text walks above root (leading `..`).
+            root_relative_target = posixpath.normpath(ref)
+            if target in tree_files or (not ref.startswith("..") and root_relative_target in tree_files):
+                continue
             if target.startswith(".."):
                 file_diags.append(Diagnostic(
                     rule_id="quality.links.resolve", severity=Severity.WARNING,
                     message=f"Relative link '{ref}' escapes the repository root.",
                 ))
-            elif target not in tree_files:
+            else:
                 file_diags.append(Diagnostic(
                     rule_id="quality.links.resolve", severity=Severity.WARNING,
                     message=f"Relative link '{ref}' does not resolve to a file in the scanned tree.",
