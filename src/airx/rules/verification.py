@@ -297,6 +297,10 @@ def check_loop_instructed(index: ArtifactIndex):
     summary="Automated hooks are configured (.github/hooks/*.json or a hooks key in .claude/settings.json).",
     why="Hooks enforce verification mechanically instead of relying on the agent remembering an instruction.",
     fix="Add a hook configuration (.github/hooks/*.json or a `hooks` entry in .claude/settings.json) that runs checks automatically.",
+    fix_by_platform=(
+        (Platform.COPILOT, "Add a hook configuration (.github/hooks/*.json) that runs checks automatically."),
+        (Platform.CLAUDE, "Add a `hooks` entry in .claude/settings.json that runs checks automatically."),
+    ),
     effort="additive",
 )
 def check_hooks_present(index: ArtifactIndex):

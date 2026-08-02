@@ -1,10 +1,9 @@
 """Quality pillar: how well entry-point and instructions files are written
 (plan-v2-fable.md §4.3).
 
-All nine rules operate on the entry-point documents
+All eight rules operate on the entry-point documents
 (`index.entrypoint_docs()`) plus parsed `*.instructions.md` artifacts
-(`index.instructions`), except `quality.no-secrets`, which scans every
-Markdown artifact in the repository. Multi-file rules aggregate by mean and
+(`index.instructions`). Multi-file rules aggregate by mean and
 attach per-file diagnostics as `(rel_path, Diagnostic)` tuples.
 
 A *directive* is a bulleted line (`^\\s*[-*]\\s+\\S`) with more than 10
@@ -60,12 +59,6 @@ def _boundary_wrap(marker: str) -> str:
 _STALE_RES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (marker, re.compile(_boundary_wrap(marker), re.IGNORECASE))
     for marker in config.STALE_MARKERS
-)
-
-# Credential shapes are case-sensitive by construction (explicit character
-# classes in each pattern), so no IGNORECASE here.
-_SECRET_RES: tuple[re.Pattern[str], ...] = tuple(
-    re.compile(p) for p in config.SECRET_SHAPE_PATTERNS
 )
 
 # Same link shape as airx.rules.skills: relative Markdown links only —
@@ -412,50 +405,6 @@ def check_no_stale_markers(index: ArtifactIndex):
 
 
 # =============================================================================
-# quality.no-secrets
-# =============================================================================
-
-@rule(
-    id="quality.no-secrets", pillar=Pillar.QUALITY, scope=RuleScope.REPO,
-    applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
-    source=RuleSource.ADVISORY,  # allowlisted: shape-validated, objective check
-    doc_url="https://cwe.mitre.org/data/definitions/798.html",
-    summary="No credential-shaped string (GitHub/Anthropic/OpenAI/AWS/Slack/Google "
-            "token or private key) appears in any AI artifact file.",
-    why="Instruction files are loaded into every agent session and often mirrored to "
-        "logs, so a credential here is effectively published.",
-    fix="Remove the credential, rotate it, and reference it via an environment "
-        "variable instead.",
-    effort="mechanical",
-)
-def check_no_secrets(index: ArtifactIndex):
-    # All Markdown artifacts. `index.skills` docs are SKILL-kind artifacts and
-    # therefore already part of `index.artifacts`, so one pass covers both sets.
-    scanned = sorted(
-        ((a.rel_path, a.doc) for a in index.artifacts if a.doc is not None),
-        key=lambda item: str(item[0]),
-    )
-    if not scanned:
-        return None
-    diags: list[tuple[PurePosixPath, Diagnostic]] = []
-    for rel, doc in scanned:
-        for line_no, line in enumerate(doc.raw_text.splitlines(), start=1):
-            for rx in _SECRET_RES:
-                match = rx.search(line)
-                if match:
-                    redacted = match.group()[:8] + "…"
-                    diags.append((rel, Diagnostic(
-                        rule_id="quality.no-secrets", severity=Severity.ERROR,
-                        message=f"Credential-shaped string '{redacted}' matches secret "
-                                f"pattern {rx.pattern!r}; remove and rotate it.",
-                        line=line_no,
-                    )))
-    if diags:
-        return 0.0, diags
-    return 1.0, []
-
-
-# =============================================================================
 # quality.links.resolve
 # =============================================================================
 
@@ -489,12 +438,23 @@ def check_links_resolve(index: ArtifactIndex):
         file_diags: list[Diagnostic] = []
         for ref in refs:
             target = posixpath.normpath(posixpath.join(posixpath.dirname(str(rel)), ref))
+            # Agents (the audience this rule protects, per `why` above) almost
+            # universally resolve paths mentioned in instructions relative to
+            # the repository root via their file-access tools, not relative
+            # to the directory of the instructions file that mentioned them
+            # (unlike a browser resolving a rendered Markdown link's href).
+            # Treat a link as resolved if it works under *either* reading, and
+            # only report "escapes the repository root" when neither does and
+            # the author's own text walks above root (leading `..`).
+            root_relative_target = posixpath.normpath(ref)
+            if target in tree_files or (not ref.startswith("..") and root_relative_target in tree_files):
+                continue
             if target.startswith(".."):
                 file_diags.append(Diagnostic(
                     rule_id="quality.links.resolve", severity=Severity.WARNING,
                     message=f"Relative link '{ref}' escapes the repository root.",
                 ))
-            elif target not in tree_files:
+            else:
                 file_diags.append(Diagnostic(
                     rule_id="quality.links.resolve", severity=Severity.WARNING,
                     message=f"Relative link '{ref}' does not resolve to a file in the scanned tree.",

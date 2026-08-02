@@ -124,12 +124,17 @@ is only evaluated against an explicit date (`--today 2026-07-29` or
 `AIRX_TODAY`) — the scoring path never reads the clock, so output stays
 reproducible.
 
-## CodeCompass — the web UI
+## AgentCompass — the web UI
 
-**CodeCompass** — AI-powered repository understanding. Paste a public GitHub
+**AgentCompass** — your compass for AI-agent-ready repos. Paste a public GitHub
 repository URL into the browser, get the full report: overall score and grade,
 Copilot/Claude platform bars, per-pillar breakdown, filterable findings, and
 the ranked top fixes.
+
+A **Copilot / Claude Code / All** toggle scopes the report to one agent
+harness, so a Claude Code-only (or Copilot-only) team isn't scored against
+rules for a harness they don't use. The selection carries over on re-analysis
+and is reflected in the shareable URL (`?platform=claude`).
 
 The scan is **clone-free**: one GitHub Trees API call lists every file in the
 repository, and only the files the rules actually read — classified AI
@@ -163,6 +168,9 @@ All configuration is environment variables:
 | `LOCAL_REPOS_ROOT` | unset | Root directory local-path analyses are strictly confined to |
 | `STATIC_DIR` | unset | Directory of the built SPA (`web/dist`) to serve |
 | `MAX_CONCURRENT_ANALYSES` | `4` | Cap on simultaneous analyses |
+| `MAX_FETCH_FILES` | `400` | Online-scan cap on classified AI-artifact files fetched per repository; raise it to analyze larger repos without local-path mode |
+| `MAX_FILE_BYTES` | `2097152` (2 MB) | Online-scan per-file size cap, in bytes |
+| `MAX_TOTAL_BYTES` | `20971520` (20 MB) | Online-scan total fetch-size cap, in bytes |
 
 ### API
 
@@ -171,15 +179,18 @@ All configuration is environment variables:
   JSON report plus a `meta` block (`source`, `ref`, `resolved_sha`,
   `listed_files`, `fetched_files`, `duration_ms`). Errors come back as
   `{"error": {"code", "message"}}` with `400`/`404`/`413`/`422`/`429`.
+  An optional `"platform": "copilot"|"claude"|"all"` field scopes scoring to
+  one platform's rules (default `"all"`), mirroring the CLI's `--platform`
+  flag; the applied value is echoed back as the report's top-level `platform` key.
 - `GET /api/health` — liveness. `GET /api/version` — `{version, local_mode}`.
 
 ### Private repositories
 
 The online scan only reaches public GitHub. For private code, self-host
-CodeCompass next to your repositories: mount them read-only into the
+AgentCompass next to your repositories: mount them read-only into the
 container, set `ALLOW_LOCAL_PATHS=true` and `LOCAL_REPOS_ROOT`, and analyze by
 relative path — the analysis itself never touches the network. A Helm chart
-for Kubernetes deployments lives at `deploy/helm/codecompass`; see
+for Kubernetes deployments lives at `deploy/helm/agentcompass`; see
 [`deploy/README.md`](deploy/README.md) for both setups.
 
 ## How it works

@@ -65,6 +65,12 @@ def _description_of(artifact: Artifact) -> str | None:
     summary="At least one custom agent file exists (.github/agents/ or .claude/agents/).",
     why="Custom agents give recurring tasks a scoped persona with its own tools and instructions instead of re-prompting from scratch.",
     fix="Add an agent Markdown file under .claude/agents/ or .github/agents/ with name, description, and tools frontmatter.",
+    fix_by_platform=(
+        (Platform.COPILOT, "Add an agent Markdown file under .github/agents/ with name, description, "
+                           "and tools frontmatter."),
+        (Platform.CLAUDE, "Add an agent Markdown file under .claude/agents/ with name, description, "
+                          "and tools frontmatter."),
+    ),
     effort="authoring",
 )
 def check_agents_present(index: ArtifactIndex):

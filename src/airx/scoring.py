@@ -49,6 +49,10 @@ class ScoreCard:
     evaluations: tuple[RuleEvaluation, ...]
     has_error_finding: bool
     profile: str = "standard"
+    #: "all", "copilot", or "claude" — the `--platform`/API filter applied
+    #: when this card was scored. "all" means no filter (both platforms'
+    #: rules count toward `overall`/`pillars`/`evaluations`).
+    platform: str = "all"
     copilot: float | None = None
     claude: float | None = None
     parity_delta: float | None = None
@@ -263,6 +267,7 @@ def score(
         grade=grade, raw_grade=raw_grade, grade_capped=grade_capped,
         evaluations=evaluations, has_error_finding=has_error,
         profile=profile,
+        platform=platform.value if platform is not None else "all",
         copilot=round(copilot, 2) if copilot is not None else None,
         claude=round(claude, 2) if claude is not None else None,
         parity_delta=parity_delta,

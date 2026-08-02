@@ -110,6 +110,11 @@ def _glob_match(pattern: str, path_str: str) -> bool:
         "bloating the always-on entry point.",
     fix="Add a .github/instructions/<area>.instructions.md, a .claude/rules/<topic>.md, "
         "or an AGENTS.md inside a subsystem directory.",
+    fix_by_platform=(
+        (Platform.COPILOT, "Add a .github/instructions/<area>.instructions.md or an AGENTS.md "
+                            "inside a subsystem directory."),
+        (Platform.CLAUDE, "Add a .claude/rules/<topic>.md or an AGENTS.md inside a subsystem directory."),
+    ),
     effort="additive",
 )
 def check_scoped_files_present(index: ArtifactIndex):

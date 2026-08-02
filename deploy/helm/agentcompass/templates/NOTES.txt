@@ -1,4 +1,4 @@
-CodeCompass {{ .Chart.AppVersion }} has been deployed.
+AgentCompass {{ .Chart.AppVersion }} has been deployed.
 
 1. Reach the application:
 {{- if .Values.ingress.enabled }}
@@ -9,7 +9,7 @@ CodeCompass {{ .Chart.AppVersion }} has been deployed.
 {{- end }}
 {{- else }}
   kubectl --namespace {{ .Release.Namespace }} port-forward \
-    svc/{{ include "codecompass.fullname" . }} 8080:{{ .Values.service.port }}
+    svc/{{ include "agentcompass.fullname" . }} 8080:{{ .Values.service.port }}
   open http://localhost:8080
 {{- end }}
 
@@ -22,9 +22,9 @@ CodeCompass {{ .Chart.AppVersion }} has been deployed.
 
 Tip: without a GitHub token the API allows only 60 requests/hour. Create a
 secret and set github.tokenSecretName to raise it to 5000:
-  kubectl create secret generic codecompass-github \
+  kubectl create secret generic agentcompass-github \
     --from-literal=github-token=ghp_yourtoken
-  helm upgrade {{ .Release.Name }} <chart> --set github.tokenSecretName=codecompass-github
+  helm upgrade {{ .Release.Name }} <chart> --set github.tokenSecretName=agentcompass-github
 {{- end }}
 {{- if .Values.localRepos.enabled }}
 

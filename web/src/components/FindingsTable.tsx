@@ -119,7 +119,7 @@ export function FindingsTable({ findings }: FindingsTableProps) {
         <ul className="divide-y divide-gray-100 dark:divide-night-border">
           {visible.map((finding, index) => {
             const isOpen = expanded === index;
-            const hasDetails = Boolean(finding.why || finding.fix);
+            const hasDetails = Boolean(finding.why || finding.fix || finding.doc_url);
             const location =
               finding.path !== null
                 ? `${truncateMiddle(finding.path)}${finding.line !== null ? `:${finding.line}` : ""}`
@@ -176,6 +176,19 @@ export function FindingsTable({ findings }: FindingsTableProps) {
                       <Fragment>
                         <p className="font-medium text-gray-900 dark:text-night-text">How to fix</p>
                         <p className="mt-1 text-gray-600 dark:text-night-muted">{finding.fix}</p>
+                      </Fragment>
+                    )}
+                    {finding.doc_url && (
+                      <Fragment>
+                        <p className="mt-3 font-medium text-gray-900 dark:text-night-text">Source</p>
+                        <a
+                          href={finding.doc_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="focus-ring mt-1 inline-block break-all text-primary-700 underline hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-300"
+                        >
+                          {finding.doc_url}
+                        </a>
                       </Fragment>
                     )}
                   </div>

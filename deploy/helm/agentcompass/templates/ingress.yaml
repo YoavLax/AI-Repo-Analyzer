@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "codecompass.fullname" . }}
+  name: {{ include "agentcompass.fullname" . }}
   labels:
-    {{- include "codecompass.labels" . | nindent 4 }}
+    {{- include "agentcompass.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -33,7 +33,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "codecompass.fullname" $ }}
+                name: {{ include "agentcompass.fullname" $ }}
                 port:
                   name: http
           {{- end }}

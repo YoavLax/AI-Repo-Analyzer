@@ -24,6 +24,21 @@ _LINT_HINTS = (
     ".eslintrc", "eslint.config", ".prettierrc", ".golangci.yml", "ruff.toml",
     ".flake8", "rustfmt.toml",
 )
+#: Matches "Dockerfile" itself plus common variant naming conventions
+#: (Dockerfile.dev, Dockerfile-prod, backend.dockerfile, worker_Dockerfile),
+#: not just the exact bare filename.
+_DOCKERFILE_RE = re.compile(r"(?i)^dockerfile([._-].+)?$|^.+[._-]dockerfile$")
+
+#: .NET test project naming convention (Foo.Tests.csproj, Foo.UnitTests.fsproj,
+#: Foo.IntegrationTests.vbproj) \u2014 the de facto standard for locating test
+#: projects in a .NET solution, since they are rarely named "tests"/"test".
+_DOTNET_TEST_PROJECT_RE = re.compile(
+    r"(?i)\.(?:unit|integration)?tests?\.(?:cs|vb|fs)proj$"
+)
+
+
+def _looks_like_dockerfile(name: str) -> bool:
+    return _DOCKERFILE_RE.match(name) is not None
 
 
 @dataclass(frozen=True)
@@ -89,7 +104,20 @@ def probe(tree: RepoTree) -> RepoFacts:
         or "[tool.pytest" in pyproject_raw
     )
     has_js_test_config = any(n.startswith(_JS_TEST_CONFIGS) for n in names)
-    has_tests_dir = any(f.parts[0] in ("tests", "test") for f in tree.files)
+    # Non-Python/JS ecosystem test conventions: .NET test projects (e.g.
+    # Foo.Tests.csproj), Go *_test.go files, and Maven/Gradle src/test/ layout.
+    has_dotnet_test_project = any(_DOTNET_TEST_PROJECT_RE.search(n) for n in names)
+    has_go_test_files = any(f.name.endswith("_test.go") for f in tree.files)
+    has_maven_test_dir = any(
+        "src" in f.parts and "test" in f.parts and f.parts.index("test") == f.parts.index("src") + 1
+        for f in tree.files
+    )
+    has_tests_dir = (
+        any(f.parts[0] in ("tests", "test") for f in tree.files)
+        or has_dotnet_test_project
+        or has_go_test_files
+        or has_maven_test_dir
+    )
     test_evidence = (
         has_pytest or has_js_test_config or has_tests_dir
         or "test" in package_scripts or "test" in makefile_targets
@@ -134,7 +162,7 @@ def probe(tree: RepoTree) -> RepoFacts:
         )
 
     has_env_example = ".env.example" in names or ".env.template" in names
-    has_devcontainer = "Dockerfile" in names or any(
+    has_devcontainer = any(_looks_like_dockerfile(n) for n in names) or any(
         f.parts[0] == ".devcontainer" for f in tree.files
     )
     has_setup_script = (

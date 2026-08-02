@@ -1,5 +1,5 @@
 /**
- * Typed client for the CodeCompass API.
+ * Typed client for the AgentCompass API.
  *
  * The DTOs mirror the canonical report JSON produced by
  * `src/airx/report/json.py::to_json_dict` (schema 0.2.0) plus the `meta`
@@ -10,6 +10,8 @@
 export type SeverityLevel = "error" | "warning" | "info";
 export type EffortLevel = "mechanical" | "additive" | "authoring" | "organizational";
 export type GradeLetter = "A" | "B" | "C" | "D" | "E" | "F";
+/** Restricts scoring to one agent harness's rules; "all" scores both (default). */
+export type PlatformFilter = "all" | "copilot" | "claude";
 
 export interface Finding {
   rule_id: string;
@@ -112,6 +114,8 @@ export interface Report {
   tool_version: string;
   ruleset_version: string;
   profile: string;
+  /** The `--platform`/API filter this report was scored with ("all" when unscoped). */
+  platform: PlatformFilter;
   target: { root: string };
   score: Score;
   pillars: PillarScore[];
@@ -131,8 +135,8 @@ export interface VersionInfo {
 }
 
 export type AnalyzeRequest =
-  | { source: string; ref?: string | null }
-  | { path: string };
+  | ({ source: string; ref?: string | null } & { platform?: PlatformFilter })
+  | ({ path: string } & { platform?: PlatformFilter });
 
 /** Server error body: {"error": {"code", "message"}}. */
 interface ErrorBody {
@@ -176,7 +180,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(input, init);
   } catch {
-    throw new ApiError(0, "Could not reach the CodeCompass server.");
+    throw new ApiError(0, "Could not reach the AgentCompass server.");
   }
   if (!response.ok) {
     await throwApiError(response);

@@ -17,13 +17,13 @@ function copyFor(error: ApiError): ErrorCopy {
       return {
         title: "Repository not found or private",
         body: error.message,
-        note: "Private repositories can be analyzed on a self-hosted CodeCompass with a GITHUB_TOKEN, or via local-path mode.",
+        note: "Private repositories can be analyzed on a self-hosted AgentCompass with a GITHUB_TOKEN, or via local-path mode.",
       };
     case 413:
       return {
         title: "Repository too large for an online scan",
         body: error.message,
-        note: "Self-host CodeCompass next to a local clone and use local-path mode for very large repositories.",
+        note: "Self-host AgentCompass next to a local clone and use local-path mode for very large repositories.",
       };
     case 422:
       return {
@@ -51,9 +51,11 @@ function copyFor(error: ApiError): ErrorCopy {
 
 interface ErrorStateProps {
   error: ApiError;
+  /** When provided, renders a close button so the banner can be dismissed without losing context. */
+  onDismiss?: () => void;
 }
 
-export function ErrorState({ error }: ErrorStateProps) {
+export function ErrorState({ error, onDismiss }: ErrorStateProps) {
   const copy = copyFor(error);
   return (
     <div
@@ -67,7 +69,7 @@ export function ErrorState({ error }: ErrorStateProps) {
             <path d="M12 8v4.5M12 16h.01" />
           </svg>
         </span>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold">{copy.title}</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-night-muted">{copy.body}</p>
           {copy.note && (
@@ -76,6 +78,18 @@ export function ErrorState({ error }: ErrorStateProps) {
             </p>
           )}
         </div>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss error"
+            className="focus-ring -m-1 shrink-0 rounded-md p-1 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-night-text"
+          >
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="m5 5 10 10M15 5 5 15" />
+            </svg>
+          </button>
+        )}
       </div>
     </div>
   );

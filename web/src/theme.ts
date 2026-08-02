@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "codecompass-theme";
+const STORAGE_KEY = "agentcompass-theme";
 
 function initialTheme(): Theme {
   try {

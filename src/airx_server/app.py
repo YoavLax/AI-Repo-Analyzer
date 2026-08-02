@@ -15,6 +15,7 @@ import functools
 
 from airx import __version__
 from airx.ingest import Fetcher
+from airx.model import Platform
 from airx_server import service
 from airx_server.config import Settings
 
@@ -45,12 +46,15 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
             gates[loop] = gate
         return gate
 
-    app = FastAPI(title="CodeCompass", version=__version__, docs_url=None, redoc_url=None)
+    app = FastAPI(title="AgentCompass", version=__version__, docs_url=None, redoc_url=None)
 
     class AnalyzeRequest(BaseModel):
         source: str | None = None
         ref: str | None = None
         path: str | None = None
+        # Restricts scoring to one agent harness's rules, mirroring the CLI's
+        # `--platform` flag. "all" (or omitted) scores both, as before.
+        platform: str | None = None
 
     def _error(status: int, message: str) -> JSONResponse:
         return JSONResponse(status_code=status, content={"error": {"code": status, "message": message}})
@@ -77,6 +81,11 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
     async def analyze(request: AnalyzeRequest):
         if bool(request.source) == bool(request.path):
             return _error(400, "Provide exactly one of 'source' (GitHub URL) or 'path' (local mode).")
+        platform_filter: Platform | None = None
+        if request.platform is not None and request.platform != "all":
+            if request.platform not in ("copilot", "claude"):
+                return _error(400, "'platform' must be one of 'copilot', 'claude', or 'all'.")
+            platform_filter = Platform(request.platform)
         try:
             await asyncio.wait_for(_get_gate().acquire(), timeout=120)
         except (asyncio.TimeoutError, TimeoutError):
@@ -84,10 +93,19 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
         try:
             if request.source:
                 work = functools.partial(
-                    service.analyze_remote, request.source, request.ref, fetcher=fetcher,
+                    service.analyze_remote,
+                    request.source,
+                    request.ref,
+                    fetcher=fetcher,
+                    max_fetch_files=settings.max_fetch_files,
+                    max_file_bytes=settings.max_file_bytes,
+                    max_total_bytes=settings.max_total_bytes,
+                    platform=platform_filter,
                 )
             else:
-                work = functools.partial(service.analyze_local, request.path, settings)
+                work = functools.partial(
+                    service.analyze_local, request.path, settings, platform=platform_filter,
+                )
             # The pipeline is pure and CPU-bound: run it off the event loop.
             return await asyncio.get_running_loop().run_in_executor(None, work)
         except service.ServiceError as exc:

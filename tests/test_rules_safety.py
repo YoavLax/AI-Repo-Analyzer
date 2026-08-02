@@ -1,5 +1,5 @@
 """Tests for the safety pillar rules (plan-v2-fable.md §4.8)."""
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from airx import fs
 from airx.discovery import build_index
@@ -100,6 +100,55 @@ def test_gitignored_fires_on_committed_fixture():
     sat, diags = safety.check_local_files_gitignored(index)
     assert sat == 0.0
     assert len(diags) == 2
+
+
+def test_gitignored_recognizes_glob_pattern_coverage(tmp_path):
+    index = _repo(tmp_path, {
+        "CLAUDE.md": "# Memory\n",
+        ".gitignore": "__pycache__/\nCLAUDE.local.md\n.claude/*.local.*\n",
+    })
+    sat, diags = safety.check_local_files_gitignored(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+# --- safety.artifacts.no-secrets ----------------------------------------------
+
+def test_artifacts_no_secrets_satisfied_on_clean_docs(tmp_path):
+    index = _repo(tmp_path, {"CLAUDE.md": "# Memory\n\nUse `pytest` because it enforces coverage.\n"})
+    sat, diags = safety.check_artifacts_no_secrets(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_artifacts_no_secrets_flags_github_token_in_entrypoint(tmp_path):
+    token = "ghp_" + "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8"
+    index = _repo(tmp_path, {"CLAUDE.md": f"# G\n\nUse token {token} for the API.\n"})
+    sat, diags = safety.check_artifacts_no_secrets(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert rel == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.ERROR
+    assert diag.line == 3
+    assert token not in diag.message  # redacted
+
+
+def test_artifacts_no_secrets_scans_skill_docs(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/skills/deploy/SKILL.md": (
+            "---\nname: deploy\ndescription: Deploys builds when asked.\n---\n"
+            "\nSet key sk-ant-api03-abcdefghijklmnopqrstuvwx before running.\n"
+        ),
+    })
+    sat, diags = safety.check_artifacts_no_secrets(index)
+    assert sat == 0.0
+    rel, _diag = diags[0]
+    assert rel == PurePosixPath(".claude/skills/deploy/SKILL.md")
+
+
+def test_artifacts_no_secrets_not_applicable_without_markdown_artifacts(tmp_path):
+    index = _repo(tmp_path, {"src/app.py": "print('hi')\n"})
+    assert safety.check_artifacts_no_secrets(index) is None
 
 
 # --- safety.permissions.no-bypass --------------------------------------------

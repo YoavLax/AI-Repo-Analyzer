@@ -6,16 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/) for its
 report schema and ruleset (see `plan.md` section 3, determinism guarantee D7).
 
-## [Unreleased] — 0.3.0 — "CodeCompass"
+## [Unreleased] — 0.3.0 — "AgentCompass"
 
-CodeCompass — AI-powered repository understanding: a web UI over the analyzer.
+AgentCompass — your compass for AI-agent-ready repos: a web UI over the analyzer.
 Paste a public GitHub URL, get the full report, no clone. Design and rationale
 in [`plan-v3-codecompass.md`](plan-v3-codecompass.md). The scoring pipeline,
 report schema, and determinism contract are untouched — ingest happens before
 the pipeline, exactly like the CLI's clone path.
 
 ### Added
-- **CodeCompass web UI** (`web/`): React 18 + TypeScript + Vite + Tailwind
+- **AgentCompass web UI** (`web/`): React 18 + TypeScript + Vite + Tailwind
   single-page app — URL input hero, score ring with grade, Copilot/Claude
   platform bars with parity delta, pillar table, findings with severity
   filters, top-fixes cards, waivers panel, light/dark theme.
@@ -38,7 +38,7 @@ the pipeline, exactly like the CLI's clone path.
 - **Containers & deployment**: multi-stage `Dockerfile` (Node builds
   `web/dist`, Python slim runtime, non-root user, healthcheck on
   `/api/health`), `docker-compose.yml` with a commented private-repos
-  local-path block, and a Helm chart (`deploy/helm/codecompass`) with
+  local-path block, and a Helm chart (`deploy/helm/agentcompass`) with
   probes, security context, optional ingress/HPA, and a `localRepos` mode.
 - **New extras** in `pyproject.toml`: `web = [fastapi, uvicorn]`; the `dev`
   extra grows fastapi + uvicorn + httpx (for Starlette's TestClient).

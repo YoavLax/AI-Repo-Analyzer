@@ -1,14 +1,16 @@
 """Safety pillar: committed personal files, permission bypass, settings
-hygiene, secret shapes in settings, and the remote-script injection surface
-(plan-v2-fable.md §4.8).
+hygiene, secret shapes in settings and artifacts, and the remote-script
+injection surface (plan-v2-fable.md §4.8).
 
-All six rules are pure functions over the `ArtifactIndex`. Two advisory rules
-(`safety.permissions.no-bypass`, `safety.settings.no-secrets`) carry ERROR
-severity via the registry allowlist because their checks are objective config
-values / credential shapes, not stylistic heuristics.
+All seven rules are pure functions over the `ArtifactIndex`. Three advisory
+rules (`safety.permissions.no-bypass`, `safety.settings.no-secrets`,
+`safety.artifacts.no-secrets`) carry ERROR severity via the registry
+allowlist because their checks are objective config values / credential
+shapes, not stylistic heuristics.
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -66,6 +68,25 @@ def check_local_files_not_committed(index: ArtifactIndex):
     return 0.0, diags
 
 
+def _gitignore_line_covers(line: str, entry: str) -> bool:
+    """True when a .gitignore line covers a local-file entry.
+
+    Handles both a literal/substring match (the historical check) and
+    gitignore-style glob patterns (e.g. ``.claude/*.local.*`` legitimately
+    covers ``.claude/settings.local.json`` even though the two strings never
+    appear as a substring of one another). Negated patterns (``!...``) are
+    never treated as coverage.
+    """
+    line = line.strip()
+    if not line or line.startswith("#") or line.startswith("!"):
+        return False
+    if entry in line:
+        return True
+    pattern = line.lstrip("/")
+    basename = entry.rsplit("/", 1)[-1]
+    return fnmatch.fnmatch(entry, pattern) or fnmatch.fnmatch(basename, pattern)
+
+
 @rule(
     id="safety.local-files.gitignored", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
     applicability=Applicability.QUALITY, weight=4, severity=Severity.WARNING,
@@ -89,7 +110,7 @@ def check_local_files_gitignored(index: ArtifactIndex):
     lines = index.facts.gitignore_lines if index.facts is not None else ()
     missing = [
         entry for entry in config.LOCAL_FILE_GITIGNORE_ENTRIES
-        if not any(entry in line for line in lines)
+        if not any(_gitignore_line_covers(line, entry) for line in lines)
     ]
     if not missing:
         return 1.0, []
@@ -222,6 +243,46 @@ def check_settings_no_secrets(index: ArtifactIndex):
                 message=f"env value for '{key}' matches a credential shape; "
                         f"never commit secrets in .claude/settings.json.",
             )))
+    if diags:
+        return 0.0, diags
+    return 1.0, []
+
+
+@rule(
+    id="safety.artifacts.no-secrets", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
+    source=RuleSource.ADVISORY,  # allowlisted: shape-validated, objective check
+    doc_url="https://cwe.mitre.org/data/definitions/798.html",
+    summary="No credential-shaped string (GitHub/Anthropic/OpenAI/AWS/Slack/Google "
+            "token or private key) appears in any AI artifact file.",
+    why="Instruction files are loaded into every agent session and often mirrored to "
+        "logs, so a credential here is effectively published.",
+    fix="Remove the credential, rotate it, and reference it via an environment "
+        "variable instead.",
+    effort="mechanical",
+)
+def check_artifacts_no_secrets(index: ArtifactIndex):
+    # All Markdown artifacts. `index.skills` docs are SKILL-kind artifacts and
+    # therefore already part of `index.artifacts`, so one pass covers both sets.
+    scanned = sorted(
+        ((a.rel_path, a.doc) for a in index.artifacts if a.doc is not None),
+        key=lambda item: str(item[0]),
+    )
+    if not scanned:
+        return None
+    diags: list[tuple[PurePosixPath, Diagnostic]] = []
+    for rel, doc in scanned:
+        for line_no, line in enumerate(doc.raw_text.splitlines(), start=1):
+            for rx in _SECRET_RES:
+                match = rx.search(line)
+                if match:
+                    redacted = match.group()[:8] + "…"
+                    diags.append((rel, Diagnostic(
+                        rule_id="safety.artifacts.no-secrets", severity=Severity.ERROR,
+                        message=f"Credential-shaped string '{redacted}' matches secret "
+                                f"pattern {rx.pattern!r}; remove and rotate it.",
+                        line=line_no,
+                    )))
     if diags:
         return 0.0, diags
     return 1.0, []

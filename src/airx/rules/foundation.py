@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+from pathlib import PurePosixPath
 
 from airx.discovery import ArtifactIndex
 from airx.model import (
@@ -67,6 +68,11 @@ def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
     summary="At least one always-on entry point exists (copilot-instructions.md, AGENTS.md, or CLAUDE.md).",
     why="Without an always-on entry point, AI assistants start every task with zero repository context.",
     fix="Create a .github/copilot-instructions.md, AGENTS.md, or CLAUDE.md describing the project.",
+    fix_by_platform=(
+        (Platform.COPILOT, "Create a .github/copilot-instructions.md or AGENTS.md describing the project."),
+        (Platform.CLAUDE, "Create a CLAUDE.md (or an AGENTS.md bridged via a CLAUDE.md containing "
+                          "'@AGENTS.md') describing the project."),
+    ),
     effort="additive",
 )
 def check_entrypoint_present(index: ArtifactIndex):
@@ -89,6 +95,7 @@ def check_entrypoint_present(index: ArtifactIndex):
     why="GitHub Copilot only auto-loads .github/copilot-instructions.md or AGENTS.md.",
     fix="Add a .github/copilot-instructions.md (or a root AGENTS.md) with project instructions.",
     effort="additive",
+    implies=("foundation.entrypoint.present",),
 )
 def check_copilot_entrypoint(index: ArtifactIndex):
     if index.copilot_instructions or index.agents_md_paths:
@@ -106,14 +113,31 @@ def check_copilot_entrypoint(index: ArtifactIndex):
     why="Claude Code auto-loads only CLAUDE.md; without it Claude starts with no project memory.",
     fix="Add a CLAUDE.md (or bridge an existing AGENTS.md with a CLAUDE.md containing '@AGENTS.md').",
     effort="additive",
+    implies=("foundation.entrypoint.present",),
 )
 def check_claude_entrypoint(index: ArtifactIndex):
     if index.claude_md:
         return 1.0, []
+    # The suggested fix must match what actually exists in the repo: bridging
+    # to '@AGENTS.md' is only actionable when a root AGENTS.md is present.
+    # Otherwise the more common case (a .github/copilot-instructions.md entry
+    # point with no AGENTS.md at all, per plan-v2-fable.md's Copilot/Claude
+    # parity model) needs its own bridge target instead of a nonexistent one.
+    if PurePosixPath("AGENTS.md") in index.agents_md_paths:
+        message = (
+            "No CLAUDE.md found. Claude Code reads CLAUDE.md, not AGENTS.md directly — "
+            "bridge it with a CLAUDE.md containing '@AGENTS.md'."
+        )
+    elif index.copilot_instructions is not None:
+        message = (
+            "No CLAUDE.md found. Claude Code does not read .github/copilot-instructions.md — "
+            "bridge it with a CLAUDE.md containing '@.github/copilot-instructions.md'."
+        )
+    else:
+        message = "No CLAUDE.md found; Claude Code starts every session with no project memory."
     return 0.0, [Diagnostic(
         rule_id="foundation.claude.entrypoint", severity=Severity.WARNING,
-        message="No CLAUDE.md found. Claude Code reads CLAUDE.md, not AGENTS.md directly — "
-                "bridge it with a CLAUDE.md containing '@AGENTS.md'.",
+        message=message,
     )]
 
 

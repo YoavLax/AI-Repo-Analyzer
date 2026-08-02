@@ -189,6 +189,51 @@ def test_truncated_tree_is_rejected(tmp_path):
     assert exc.value.status == 413
 
 
+def test_max_fetch_files_is_configurable(tmp_path):
+    """Self-hosted deployments can raise (or lower) the online-scan artifact-file
+    cap via `max_fetch_files` (wired to the `MAX_FETCH_FILES` env var)."""
+    with pytest.raises(IngestError) as exc:
+        fetch_snapshot(
+            RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=1,
+        )
+    assert exc.value.status == 413
+    assert "limit 1" in exc.value.user_message
+
+    # A generous cap lets the same repository through.
+    tree, _ = fetch_snapshot(
+        RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=10_000,
+    )
+    assert tree.root.exists()
+
+
+def test_max_file_bytes_is_configurable(tmp_path):
+    """A per-file size cap that would reject a real artifact (e.g. a large
+    generated icon script) can be raised via `max_file_bytes`
+    (`MAX_FILE_BYTES` env var)."""
+    files = dict(REPO_FILES)
+    fetcher = FakeFetcher(files)
+    original = fetcher.get_json
+
+    def patched(url):
+        data = original(url)
+        if "git/trees" in url:
+            for entry in data["tree"]:
+                if entry["path"] == "CLAUDE.md":
+                    entry["size"] = 3 * 1024 * 1024
+        return data
+
+    fetcher.get_json = patched
+
+    with pytest.raises(IngestError) as exc:
+        fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=fetcher)
+    assert exc.value.status == 413
+
+    tree, _ = fetch_snapshot(
+        RemoteRepo("o", "r"), tmp_path, fetcher=fetcher, max_file_bytes=4 * 1024 * 1024,
+    )
+    assert tree.root.exists()
+
+
 def test_oversized_artifact_is_rejected(tmp_path):
     files = dict(REPO_FILES)
     fetcher = FakeFetcher(files)

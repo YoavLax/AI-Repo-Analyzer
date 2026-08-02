@@ -1,6 +1,6 @@
-# CodeCompass web frontend
+# AgentCompass web frontend
 
-The single-page React UI for CodeCompass: paste a public GitHub repository URL
+The single-page React UI for AgentCompass: paste a public GitHub repository URL
 (or `owner/repo`), get the full AI-readiness report — score ring, pillar
 breakdown, findings, top fixes, and waivers. Light and dark themes, no external
 requests at runtime (Inter is self-hosted via `@fontsource-variable/inter`).

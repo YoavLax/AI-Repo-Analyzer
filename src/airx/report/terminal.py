@@ -15,11 +15,18 @@ def to_terminal(index: ArtifactIndex, card: ScoreCard) -> str:
     lines.append("")
     cap_note = f"  (capped from {card.raw_grade})" if card.grade_capped else ""
     lines.append(f"Overall score: {card.overall:.1f}/100   Grade: {card.grade}{cap_note}")
-    if card.copilot is not None or card.claude is not None:
-        copilot = f"{card.copilot:.1f}" if card.copilot is not None else "n/a"
-        claude = f"{card.claude:.1f}" if card.claude is not None else "n/a"
-        parity = f"   parity delta {card.parity_delta:.1f}" if card.parity_delta is not None else ""
-        lines.append(f"Platforms:     copilot {copilot}   claude {claude}{parity}")
+    if card.platform == "all":
+        if card.copilot is not None or card.claude is not None:
+            copilot = f"{card.copilot:.1f}" if card.copilot is not None else "n/a"
+            claude = f"{card.claude:.1f}" if card.claude is not None else "n/a"
+            parity = f"   parity delta {card.parity_delta:.1f}" if card.parity_delta is not None else ""
+            lines.append(f"Platforms:     copilot {copilot}   claude {claude}{parity}")
+    else:
+        # A single-platform scope: showing the other platform's score and the
+        # parity delta would be noise the user explicitly scoped away from.
+        score = card.copilot if card.platform == "copilot" else card.claude
+        if score is not None:
+            lines.append(f"Platform:      {card.platform} {score:.1f}")
     if card.profile != "standard":
         lines.append(f"Profile:       {card.profile}")
     lines.append("")
@@ -41,17 +48,19 @@ def to_terminal(index: ArtifactIndex, card: ScoreCard) -> str:
         if not ev.applicable or ev.waived:
             continue
         for path, diag in ev.diagnostics:
-            findings.append((path, diag))
+            findings.append((path, diag, ev.meta.doc_url))
     findings.sort(key=lambda t: (_SEVERITY_ORDER[t[1].severity], str(t[0] or ""), t[1].rule_id))
 
     if findings:
         lines.append(f"Findings ({len(findings)}):")
-        for path, diag in findings:
+        for path, diag, doc_url in findings:
             loc = f"{path}" if path else "(repo)"
             if diag.line:
                 loc += f":{diag.line}"
             lines.append(f"  [{diag.severity.value:7}] {diag.rule_id:32} {loc}")
             lines.append(f"            {diag.message}")
+            if doc_url:
+                lines.append(f"            Source: {doc_url}")
     else:
         lines.append("No findings.")
 
