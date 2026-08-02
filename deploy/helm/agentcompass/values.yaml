@@ -1,7 +1,7 @@
-# Default values for the CodeCompass chart.
+# Default values for the AgentCompass chart.
 
 image:
-  repository: codecompass
+  repository: agentcompass
   # Defaults to the chart appVersion when empty.
   tag: ""
   pullPolicy: IfNotPresent
@@ -29,14 +29,14 @@ ingress:
   className: ""
   annotations: {}
   hosts:
-    - host: codecompass.example.com
+    - host: agentcompass.example.com
       paths:
         - path: /
           pathType: Prefix
   tls: []
-  #  - secretName: codecompass-tls
+  #  - secretName: agentcompass-tls
   #    hosts:
-  #      - codecompass.example.com
+  #      - agentcompass.example.com
 
 resources:
   requests:
@@ -48,7 +48,7 @@ resources:
 
 # GitHub API token (optional; raises the rate limit from 60 to 5000 req/h).
 # Create the secret first, e.g.:
-#   kubectl create secret generic codecompass-github \
+#   kubectl create secret generic agentcompass-github \
 #     --from-literal=github-token=ghp_yourtoken
 github:
   tokenSecretName: ""
@@ -66,6 +66,10 @@ localRepos:
 #   env:
 #     - name: MAX_CONCURRENT_ANALYSES
 #       value: "8"
+#     - name: MAX_FETCH_FILES
+#       value: "1500"
+#     - name: MAX_FILE_BYTES
+#       value: "5242880"   # 5 MB
 env: []
 
 podAnnotations: {}

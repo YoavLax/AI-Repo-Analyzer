@@ -12,7 +12,15 @@ from pathlib import Path
 import airx.rules  # noqa: F401  (registers built-in rules on import)
 from airx import airxfile, fs
 from airx.discovery import build_index
-from airx.ingest import Fetcher, IngestError, parse_github_url, fetch_snapshot
+from airx.ingest import (
+    Fetcher,
+    IngestError,
+    parse_github_url,
+    fetch_snapshot,
+    MAX_FETCH_FILES,
+    MAX_FILE_BYTES,
+    MAX_TOTAL_BYTES,
+)
 from airx.report import to_json_dict
 from airx.scoring import score
 from airx_server.config import Settings
@@ -44,7 +52,14 @@ def _analyze_tree(tree: fs.RepoTree) -> dict:
     return to_json_dict(index, score(index, profile=profile, airx=config))
 
 
-def analyze_remote(source: str, ref: str | None, fetcher: Fetcher | None = None) -> dict:
+def analyze_remote(
+    source: str,
+    ref: str | None,
+    fetcher: Fetcher | None = None,
+    max_fetch_files: int = MAX_FETCH_FILES,
+    max_file_bytes: int = MAX_FILE_BYTES,
+    max_total_bytes: int = MAX_TOTAL_BYTES,
+) -> dict:
     remote = parse_github_url(source)
     if remote is None:
         raise ServiceError(
@@ -56,9 +71,12 @@ def analyze_remote(source: str, ref: str | None, fetcher: Fetcher | None = None)
         remote = type(remote)(owner=remote.owner, repo=remote.repo, ref=ref)
 
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="codecompass-") as workdir:
+    with tempfile.TemporaryDirectory(prefix="agentcompass-") as workdir:
         try:
-            tree, stats = fetch_snapshot(remote, Path(workdir), fetcher=fetcher)
+            tree, stats = fetch_snapshot(
+                remote, Path(workdir), fetcher=fetcher, max_fetch_files=max_fetch_files,
+                max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes,
+            )
         except IngestError as exc:
             raise ServiceError(exc.user_message, exc.status) from exc
         report = _analyze_tree(tree)

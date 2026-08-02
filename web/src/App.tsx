@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { analyze, ApiError, version, type AnalyzeRequest, type Report } from "./api";
 import ErrorState from "./components/ErrorState";
 import LoadingSkeleton from "./components/LoadingSkeleton";
@@ -7,16 +7,45 @@ import SearchHero from "./components/SearchHero";
 import ThemeToggle from "./components/ThemeToggle";
 import { useTheme } from "./theme";
 
-type AppState =
-  | { phase: "idle" }
-  | { phase: "loading" }
-  | { phase: "report"; report: Report }
-  | { phase: "error"; error: ApiError };
+type Status = "idle" | "loading" | "error";
+
+interface AppState {
+  status: Status;
+  /** Last successful report, kept around while a re-analysis is loading or fails. */
+  report: Report | null;
+  error: ApiError | null;
+}
+
+const INITIAL_STATE: AppState = { status: "idle", report: null, error: null };
+
+/** Reads `?repo=owner/name[&ref=...]` or `?path=...` from the current URL. */
+function requestFromLocation(): AnalyzeRequest | null {
+  const params = new URLSearchParams(window.location.search);
+  const path = params.get("path");
+  if (path) return { path };
+  const repo = params.get("repo");
+  if (repo) return { source: repo, ref: params.get("ref") };
+  return null;
+}
+
+/** Builds the shareable `?repo=` / `?path=` URL for a request, preserving the current path. */
+function urlForRequest(request: AnalyzeRequest): string {
+  const params = new URLSearchParams();
+  if ("path" in request) {
+    params.set("path", request.path);
+  } else {
+    params.set("repo", request.source);
+    if (request.ref) params.set("ref", request.ref);
+  }
+  return `${window.location.pathname}?${params.toString()}`;
+}
 
 export function App() {
   const { theme, toggle } = useTheme();
-  const [state, setState] = useState<AppState>({ phase: "idle" });
+  const [state, setState] = useState<AppState>(INITIAL_STATE);
   const [localMode, setLocalMode] = useState(false);
+  // Guards against a stale in-flight request clobbering state after a newer one starts.
+  const requestId = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,25 +61,70 @@ export function App() {
     };
   }, []);
 
-  const runAnalysis = useCallback((request: AnalyzeRequest) => {
-    setState({ phase: "loading" });
+  const runAnalysis = useCallback((request: AnalyzeRequest, options?: { fromHistory?: boolean }) => {
+    const id = ++requestId.current;
+    setState((prev) => ({ status: "loading", report: prev.report, error: null }));
     window.scrollTo({ top: 0 });
+    if (!options?.fromHistory) {
+      const url = urlForRequest(request);
+      if (url !== `${window.location.pathname}${window.location.search}`) {
+        window.history.pushState({}, "", url);
+      }
+    }
     analyze(request)
-      .then((report) => setState({ phase: "report", report }))
+      .then((report) => {
+        if (id !== requestId.current) return;
+        setState({ status: "idle", report, error: null });
+      })
       .catch((error: unknown) => {
+        if (id !== requestId.current) return;
         const apiError =
           error instanceof ApiError ? error : new ApiError(0, "Unexpected client error.");
-        setState({ phase: "error", error: apiError });
+        setState((prev) => ({ status: "error", report: prev.report, error: apiError }));
       });
   }, []);
 
-  if (state.phase === "report") {
+  // Deep-link support: analyze whatever `?repo=`/`?path=` is in the URL on first load,
+  // and again whenever the user navigates with the browser's back/forward buttons.
+  useEffect(() => {
+    const initial = requestFromLocation();
+    if (initial) runAnalysis(initial, { fromHistory: true });
+
+    function onPopState() {
+      const request = requestFromLocation();
+      if (request) {
+        runAnalysis(request, { fromHistory: true });
+      } else {
+        requestId.current += 1;
+        setState(INITIAL_STATE);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const goHome = useCallback(() => {
+    requestId.current += 1;
+    window.history.pushState({}, "", window.location.pathname);
+    setState(INITIAL_STATE);
+  }, []);
+
+  const dismissError = useCallback(() => {
+    setState((prev) => ({ ...prev, status: "idle", error: null }));
+  }, []);
+
+  if (state.report) {
     return (
       <ReportView
         report={state.report}
         theme={theme}
         onToggleTheme={toggle}
         onAnalyze={runAnalysis}
+        onReset={goHome}
+        loading={state.status === "loading"}
+        error={state.status === "error" ? state.error : null}
+        onDismissError={dismissError}
       />
     );
   }
@@ -61,12 +135,12 @@ export function App() {
         <ThemeToggle theme={theme} onToggle={toggle} />
       </div>
 
-      {state.phase === "loading" ? (
+      {state.status === "loading" ? (
         <LoadingSkeleton />
       ) : (
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
           <SearchHero localMode={localMode} onAnalyze={runAnalysis} />
-          {state.phase === "error" && <ErrorState error={state.error} />}
+          {state.status === "error" && state.error && <ErrorState error={state.error} />}
         </div>
       )}
     </div>

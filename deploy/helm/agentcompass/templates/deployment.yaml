@@ -1,16 +1,16 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "codecompass.fullname" . }}
+  name: {{ include "agentcompass.fullname" . }}
   labels:
-    {{- include "codecompass.labels" . | nindent 4 }}
+    {{- include "agentcompass.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "codecompass.selectorLabels" . | nindent 6 }}
+      {{- include "agentcompass.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -18,7 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "codecompass.selectorLabels" . | nindent 8 }}
+        {{- include "agentcompass.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -27,13 +27,13 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "codecompass.serviceAccountName" . }}
+      serviceAccountName: {{ include "agentcompass.serviceAccountName" . }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: codecompass
+        - name: agentcompass
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- with .Values.securityContext }}
@@ -46,7 +46,7 @@ spec:
               protocol: TCP
           env:
             - name: STATIC_DIR
-              value: /opt/codecompass/static
+              value: /opt/agentcompass/static
             {{- if .Values.github.tokenSecretName }}
             - name: GITHUB_TOKEN
               valueFrom:

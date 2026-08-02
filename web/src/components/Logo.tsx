@@ -9,9 +9,9 @@ interface LogoProps {
 }
 
 /**
- * CodeCompass logo: gradient compass rose (8 directional wedges — large
+ * AgentCompass logo: gradient compass rose (8 directional wedges — large
  * cardinals, small diagonals), inner ring, two-kite needle rotated 45deg
- * with a center dot; wordmark "Code" (neutral) + "Compass" (gradient).
+ * with a center dot; wordmark "Agent" (neutral) + "Compass" (gradient).
  */
 export function Logo({ size = 40, withTagline = false, markOnly = false }: LogoProps) {
   const gradientId = useId();
@@ -23,7 +23,7 @@ export function Logo({ size = 40, withTagline = false, markOnly = false }: LogoP
       width={size}
       height={size}
       role="img"
-      aria-label="CodeCompass logo"
+      aria-label="AgentCompass logo"
       className="shrink-0 text-gray-900 dark:text-white"
     >
       <defs>
@@ -77,13 +77,13 @@ export function Logo({ size = 40, withTagline = false, markOnly = false }: LogoP
           className="font-bold leading-none tracking-tight"
           style={{ fontSize: wordmarkSize }}
         >
-          <span className="text-gray-900 dark:text-white">Code</span>
+          <span className="text-gray-900 dark:text-white">Agent</span>
           <span className="text-gradient">Compass</span>
         </span>
       </div>
       {withTagline && (
         <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-gray-500 dark:text-night-muted">
-          AI-powered repository understanding
+          Your compass for AI-agent-ready repos
         </p>
       )}
     </div>

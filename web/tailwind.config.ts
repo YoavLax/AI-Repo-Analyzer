@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// CodeCompass design tokens — Untitled-UI direction (plan-v3-codecompass.md §4).
+// AgentCompass design tokens — Untitled-UI direction (plan-v3-codecompass.md §4).
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   darkMode: "class",

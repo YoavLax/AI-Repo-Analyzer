@@ -1,4 +1,4 @@
-# CodeCompass — docker compose quickstart (plan-v3-codecompass.md §5).
+# AgentCompass — docker compose quickstart (plan-v3-codecompass.md §5).
 #
 #   GITHUB_TOKEN=ghp_xxx docker compose up --build
 #   open http://localhost:8080
@@ -7,13 +7,16 @@
 # 5000 requests/hour.
 
 services:
-  codecompass:
+  agentcompass:
     build: .
-    image: codecompass:latest
+    image: agentcompass:latest
     ports:
       - "8080:8080"
     environment:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      MAX_FETCH_FILES: ${MAX_FETCH_FILES:-}
+      MAX_FILE_BYTES: ${MAX_FILE_BYTES:-}
+      MAX_TOTAL_BYTES: ${MAX_TOTAL_BYTES:-}
     restart: unless-stopped
     healthcheck:
       test:

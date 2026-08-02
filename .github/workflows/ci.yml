@@ -54,17 +54,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t codecompass:ci .
+        run: docker build -t agentcompass:ci .
       - name: Smoke-test the container
         run: |
-          docker run -d --name cc -p 8080:8080 codecompass:ci
+          docker run -d --name cc -p 8080:8080 agentcompass:ci
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 1
           done
           docker logs cc
           test "$ok" = 1
-          curl -fsS http://127.0.0.1:8080/ | grep -qi codecompass
+          curl -fsS http://127.0.0.1:8080/ | grep -qi agentcompass
           docker rm -f cc
 
   helm:
@@ -73,8 +73,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
-      - run: helm lint deploy/helm/codecompass
-      - run: helm template deploy/helm/codecompass > /dev/null
+      - run: helm lint deploy/helm/agentcompass
+      - run: helm template deploy/helm/agentcompass > /dev/null
 
   dogfood:
     name: Analyze this repository with itself

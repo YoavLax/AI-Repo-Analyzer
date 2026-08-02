@@ -261,7 +261,7 @@ def test_settings_unknown_key_renders_error_finding(tmp_path):
     )
 
 
-# --- CodeCompass (v0.3.0) review regressions ---------------------------------
+# --- AgentCompass (v0.3.0) review regressions ---------------------------------
 
 def test_ingest_listing_excludes_vendored_dirs_like_fs_scan():
     """A repository that commits node_modules/dist must score the same via the
@@ -327,7 +327,8 @@ def test_server_honors_repository_airx_yml():
     from tests.test_ingest import REPO_FILES, FakeFetcher
 
     settings = Settings(allow_local_paths=False, local_repos_root=None,
-                        static_dir=None, max_concurrent_analyses=2)
+                        static_dir=None, max_concurrent_analyses=2, max_fetch_files=400,
+                        max_file_bytes=2 * 1024 * 1024, max_total_bytes=20 * 1024 * 1024)
     waived = dict(REPO_FILES)
     waived[".airx.yml"] = (
         "waivers:\n"
@@ -348,7 +349,8 @@ def test_server_rejects_malformed_repository_airx_yml():
     from tests.test_ingest import REPO_FILES, FakeFetcher
 
     settings = Settings(allow_local_paths=False, local_repos_root=None,
-                        static_dir=None, max_concurrent_analyses=2)
+                        static_dir=None, max_concurrent_analyses=2, max_fetch_files=400,
+                        max_file_bytes=2 * 1024 * 1024, max_total_bytes=20 * 1024 * 1024)
     broken = dict(REPO_FILES)
     broken[".airx.yml"] = "waivers: [unterminated\n"
     client = TestClient(create_app(settings, fetcher=FakeFetcher(broken)))
@@ -365,7 +367,8 @@ def test_server_validation_errors_use_the_documented_error_shape():
     from airx_server.config import Settings
 
     settings = Settings(allow_local_paths=False, local_repos_root=None,
-                        static_dir=None, max_concurrent_analyses=2)
+                        static_dir=None, max_concurrent_analyses=2, max_fetch_files=400,
+                        max_file_bytes=2 * 1024 * 1024, max_total_bytes=20 * 1024 * 1024)
     client = TestClient(create_app(settings))
     response = client.post("/api/analyze", json={"source": 12345})
     assert response.status_code == 400
@@ -393,7 +396,8 @@ def test_server_gate_is_bound_per_event_loop():
 
     app = create_app(
         Settings(allow_local_paths=False, local_repos_root=None, static_dir=None,
-                 max_concurrent_analyses=1),
+                 max_concurrent_analyses=1, max_fetch_files=400,
+                 max_file_bytes=2 * 1024 * 1024, max_total_bytes=20 * 1024 * 1024),
         fetcher=FakeFetcher(REPO_FILES),
     )
     statuses: list[int] = []

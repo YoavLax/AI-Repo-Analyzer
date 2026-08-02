@@ -28,7 +28,8 @@ export function SearchHero({ localMode, onAnalyze }: SearchHeroProps) {
     <section className="flex flex-col items-center gap-8 text-center">
       <Logo size={64} withTagline />
       <p className="max-w-xl text-base text-gray-600 dark:text-night-muted">
-        Score any public GitHub repository&rsquo;s AI-readiness &mdash; no clone, no signup.
+        Score any public GitHub repo&rsquo;s readiness for Copilot &amp; Claude Code &mdash;
+        deterministic checks, concrete fixes, no clone, no signup.
       </p>
 
       {localMode && (

@@ -1,5 +1,5 @@
 /**
- * Typed client for the CodeCompass API.
+ * Typed client for the AgentCompass API.
  *
  * The DTOs mirror the canonical report JSON produced by
  * `src/airx/report/json.py::to_json_dict` (schema 0.2.0) plus the `meta`
@@ -176,7 +176,7 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(input, init);
   } catch {
-    throw new ApiError(0, "Could not reach the CodeCompass server.");
+    throw new ApiError(0, "Could not reach the AgentCompass server.");
   }
   if (!response.ok) {
     await throwApiError(response);

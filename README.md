@@ -124,9 +124,9 @@ is only evaluated against an explicit date (`--today 2026-07-29` or
 `AIRX_TODAY`) — the scoring path never reads the clock, so output stays
 reproducible.
 
-## CodeCompass — the web UI
+## AgentCompass — the web UI
 
-**CodeCompass** — AI-powered repository understanding. Paste a public GitHub
+**AgentCompass** — your compass for AI-agent-ready repos. Paste a public GitHub
 repository URL into the browser, get the full report: overall score and grade,
 Copilot/Claude platform bars, per-pillar breakdown, filterable findings, and
 the ranked top fixes.
@@ -163,6 +163,9 @@ All configuration is environment variables:
 | `LOCAL_REPOS_ROOT` | unset | Root directory local-path analyses are strictly confined to |
 | `STATIC_DIR` | unset | Directory of the built SPA (`web/dist`) to serve |
 | `MAX_CONCURRENT_ANALYSES` | `4` | Cap on simultaneous analyses |
+| `MAX_FETCH_FILES` | `400` | Online-scan cap on classified AI-artifact files fetched per repository; raise it to analyze larger repos without local-path mode |
+| `MAX_FILE_BYTES` | `2097152` (2 MB) | Online-scan per-file size cap, in bytes |
+| `MAX_TOTAL_BYTES` | `20971520` (20 MB) | Online-scan total fetch-size cap, in bytes |
 
 ### API
 
@@ -176,10 +179,10 @@ All configuration is environment variables:
 ### Private repositories
 
 The online scan only reaches public GitHub. For private code, self-host
-CodeCompass next to your repositories: mount them read-only into the
+AgentCompass next to your repositories: mount them read-only into the
 container, set `ALLOW_LOCAL_PATHS=true` and `LOCAL_REPOS_ROOT`, and analyze by
 relative path — the analysis itself never touches the network. A Helm chart
-for Kubernetes deployments lives at `deploy/helm/codecompass`; see
+for Kubernetes deployments lives at `deploy/helm/agentcompass`; see
 [`deploy/README.md`](deploy/README.md) for both setups.
 
 ## How it works

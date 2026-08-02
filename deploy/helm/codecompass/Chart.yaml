@@ -1,5 +1,5 @@
 apiVersion: v2
-name: agentcompass
+name: codecompass
 description: Your compass for AI-agent-ready repos — clone-free AI-readiness reports for GitHub repositories.
 type: application
 version: 0.1.0

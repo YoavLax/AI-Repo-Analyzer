@@ -1,4 +1,4 @@
-"""CodeCompass server tests: API contract, error mapping, local-path confinement,
+"""AgentCompass server tests: API contract, error mapping, local-path confinement,
 SPA serving. All GitHub traffic is faked via the injectable fetcher."""
 import json
 from pathlib import Path
@@ -15,7 +15,8 @@ from tests.test_ingest import REPO_FILES, FakeFetcher  # noqa: E402
 
 def _settings(**overrides) -> Settings:
     base = dict(allow_local_paths=False, local_repos_root=None, static_dir=None,
-                max_concurrent_analyses=2)
+                max_concurrent_analyses=2, max_fetch_files=400,
+                max_file_bytes=2 * 1024 * 1024, max_total_bytes=20 * 1024 * 1024)
     base.update(overrides)
     return Settings(**base)
 
@@ -42,6 +43,15 @@ def test_analyze_remote_happy_path():
     assert data["meta"]["mode"] == "online-scan"
     assert data["meta"]["listed_files"] == len(REPO_FILES)
     assert data["meta"]["fetched_files"] < data["meta"]["listed_files"]
+
+
+def test_analyze_remote_honors_configured_max_fetch_files():
+    """MAX_FETCH_FILES is deployment-configurable (env var, wired via Settings)
+    rather than a fixed 400 — a low cap must reject via the same 413 path."""
+    client = _client(_settings(max_fetch_files=1), fetcher=FakeFetcher(REPO_FILES))
+    response = client.post("/api/analyze", json={"source": "o/r"})
+    assert response.status_code == 413
+    assert "limit 1" in response.json()["error"]["message"]
 
 
 def test_analyze_report_is_deterministic_across_requests():
@@ -108,11 +118,11 @@ def test_local_mode_confines_to_root(tmp_path):
 def test_spa_fallback_serves_index(tmp_path):
     static = tmp_path / "dist"
     (static / "assets").mkdir(parents=True)
-    (static / "index.html").write_text("<html>codecompass</html>", encoding="utf-8")
+    (static / "index.html").write_text("<html>agentcompass</html>", encoding="utf-8")
     (static / "assets" / "main.js").write_text("console.log(1)", encoding="utf-8")
     client = _client(_settings(static_dir=static.resolve()))
 
-    assert "codecompass" in client.get("/").text
-    assert "codecompass" in client.get("/some/spa/route").text
+    assert "agentcompass" in client.get("/").text
+    assert "agentcompass" in client.get("/some/spa/route").text
     assert client.get("/assets/main.js").status_code == 200
     assert client.get("/api/nope").status_code == 404

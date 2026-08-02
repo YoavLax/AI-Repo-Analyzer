@@ -45,7 +45,7 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
             gates[loop] = gate
         return gate
 
-    app = FastAPI(title="CodeCompass", version=__version__, docs_url=None, redoc_url=None)
+    app = FastAPI(title="AgentCompass", version=__version__, docs_url=None, redoc_url=None)
 
     class AnalyzeRequest(BaseModel):
         source: str | None = None
@@ -84,7 +84,13 @@ def create_app(settings: Settings | None = None, fetcher: Fetcher | None = None)
         try:
             if request.source:
                 work = functools.partial(
-                    service.analyze_remote, request.source, request.ref, fetcher=fetcher,
+                    service.analyze_remote,
+                    request.source,
+                    request.ref,
+                    fetcher=fetcher,
+                    max_fetch_files=settings.max_fetch_files,
+                    max_file_bytes=settings.max_file_bytes,
+                    max_total_bytes=settings.max_total_bytes,
                 )
             else:
                 work = functools.partial(service.analyze_local, request.path, settings)
