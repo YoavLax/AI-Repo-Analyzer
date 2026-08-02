@@ -39,6 +39,22 @@ _NAME_VALID_CHARS_RE = re.compile(r"^[a-z0-9-]+$")
 _YAML_ANCHOR_RE = re.compile(r"&([A-Za-z_][A-Za-z0-9_-]*)")
 _YAML_ALIAS_RE = re.compile(r"\*([A-Za-z_][A-Za-z0-9_-]*)")
 
+
+def _is_placeholder_tag(tag: str, desc: str) -> bool:
+    """True when `tag` (e.g. '<slug>', '<commit>', a C# generic '<T>') reads
+    as a bare angle-bracket placeholder/non-markup token rather than real
+    XML/HTML/JSX: no attributes, not self-closing, and no matching closing
+    tag anywhere in the description. Real markup almost always carries an
+    attribute (`<Link prefetch={true}>`) or a structural pairing
+    (`<T>...</T>`); a lone bare token is overwhelmingly a documentation
+    convention for 'insert the real value here', not markup that would leak
+    into a consuming system as a literal tag."""
+    inner = tag[1:-1]
+    if "=" in inner or "/" in inner:
+        return False
+    name = inner.split()[0] if inner.split() else inner
+    return f"</{name}>" not in desc
+
 _FIRST_PERSON_RE = re.compile(
     r"(?:(?:^|(?<=\.\s))I\b)"
     r"|\bI\s+(?:can|will|am|do|have|would|should|need|shall|won't|didn't|don't)\b"
@@ -94,8 +110,18 @@ _CODE_BLOCK_RE = re.compile(r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)\s*$", re.MUL
 _TABLE_ROW_RE = re.compile(r"^\|.*\|$", re.MULTILINE)
 _TABLE_SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$")
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
-_MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
-_DIRECTIVE_RE = re.compile(r"(?:source|file|include):\s*([^\s]+\.[a-zA-Z0-9]+)", re.IGNORECASE)
+# Excludes scheme-qualified URLs (already handled) and root-relative paths
+# ("/docs/..."), which are the standard web convention for "relative to the
+# site's domain root" (e.g. a docs page meant to resolve against
+# https://example.com) rather than a reference to a file bundled with this
+# skill \u2014 flagging them as an escaping/broken filesystem reference is a
+# false positive, not a real CWE-59 concern.
+_MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:|/)([^)\s#]+)(?:#[^)]*)?\)")
+# Path-charset-only capture: excludes backticks, quotes, brackets, and angle
+# brackets so "...input file: [`x.csv`](x.csv)" (an ordinary sentence ending
+# in "file:", not a directive) and "source: <https://example.com/a.b>" can't
+# smuggle markdown-link or autolink syntax into the captured "path".
+_DIRECTIVE_RE = re.compile(r"(?:source|file|include):\s*([A-Za-z0-9_.\-/]+\.[a-zA-Z0-9]+)", re.IGNORECASE)
 
 # --- v0.2.0 additions (plan-v2-fable.md §4.2) --------------------------------
 
@@ -225,6 +251,12 @@ def score_description(desc: str) -> tuple[int, list[str]]:
 
 
 def _extract_references(body: str) -> list[str]:
+    # Fenced code blocks (```...``` / ~~~...~~~) commonly hold illustrative
+    # example syntax (e.g. a template for a *generated* file, or a sample CLI
+    # invocation) rather than live directives the agent should load — strip
+    # them before scanning for references so those examples aren't treated
+    # as broken links to files that were never meant to exist.
+    body = _CODE_BLOCK_RE.sub("", body)
     refs: list[str] = []
     refs.extend(_MD_LINK_RE.findall(body))
     refs.extend(_DIRECTIVE_RE.findall(body))
@@ -268,11 +300,14 @@ def _visible_files(root: Path) -> list[Path]:
 
 
 def _is_scanned_file(base: Path, target: Path) -> bool:
-    """True when `target` (inside `base`) is a file fs.scan would have
-    recorded: a regular non-symlink file with no symlinked ancestor and no
-    excluded-dir component. Both an absent file and a scan-invisible one
-    (symlink, __pycache__/...) answer False, so the answer — and therefore
-    the score — is a function of the scanned tree alone (D4/D9)."""
+    """True when `target` (inside `base`) is a file or directory fs.scan
+    would have recorded as visible: no symlinked ancestor and no
+    excluded-dir component. A directory reference (e.g. `templates/`, a
+    common convention for linking to a folder rather than one of its files)
+    resolves when the directory itself contains at least one scan-visible
+    file — an absent, empty, or scan-invisible target (symlink,
+    __pycache__/...) answers False, so the answer — and therefore the
+    score — is a function of the scanned tree alone (D4/D9)."""
     try:
         rel_parts = target.relative_to(base).parts
     except ValueError:
@@ -283,7 +318,11 @@ def _is_scanned_file(base: Path, target: Path) -> bool:
         for i in range(len(rel_parts)):
             if base.joinpath(*rel_parts[:i + 1]).is_symlink():
                 return False
-        return target.is_file()
+        if target.is_file():
+            return True
+        if target.is_dir():
+            return bool(_visible_files(target))
+        return False
     except OSError:
         return False
 
@@ -576,7 +615,7 @@ def check_description_no_xml(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
     if not isinstance(desc, str) or not desc:
         return None
-    tags = _XML_TAG_RE.findall(desc)
+    tags = [tag for tag in _XML_TAG_RE.findall(desc) if not _is_placeholder_tag(tag, desc)]
     if not tags:
         return 1.0, []
     return 0.0, [Diagnostic(rule_id="skills.description.no-xml", severity=Severity.ERROR,

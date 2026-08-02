@@ -113,6 +113,21 @@ def test_references_escape_not_applicable_without_references(tmp_path):
     assert rules.check_references_escape(doc) is None
 
 
+def test_references_escape_ignores_root_relative_url_paths(tmp_path):
+    """A '/docs/...'-style link is the standard web convention for a
+    site-root-relative URL (e.g. https://nextjs.org/docs/...), not a
+    filesystem reference \u2014 it must not be flagged as escaping the skill
+    directory (CWE-59)."""
+    doc = _doc(
+        tmp_path, "refs-weburl",
+        "name: refs-weburl\ndescription: Uses references when asked.",
+        body="\nSee [the glossary](/docs/app/glossary) and [notes](notes.md).\n",
+    )
+    sat, diags = rules.check_references_escape(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
 def test_references_resolve_still_flags_escaping_ref_as_unresolvable(tmp_path):
     """The split keeps resolve reporting an escaping ref (it cannot exist inside
     the dir), so the historical two-diagnostic behavior is preserved."""

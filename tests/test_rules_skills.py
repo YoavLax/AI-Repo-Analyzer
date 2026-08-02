@@ -73,6 +73,33 @@ def test_yaml_anchor_detected(tmp_path):
     assert sat == 0.0
 
 
+def test_no_xml_ignores_bare_placeholder_tokens(tmp_path):
+    """'<slug>', '<commit>' etc. are a common CLI/doc convention for 'insert
+    the real value here' (also covers non-markup uses of angle brackets,
+    like a C# generic type parameter '<T>') \u2014 not literal markup that
+    would leak into a routing prompt."""
+    doc = _doc(
+        tmp_path, "x",
+        "name: x\ndescription: 'Creates a new errors/<slug>.mdx page and measures the impact of <commit>.'",
+    )
+    sat, diags = rules.check_description_no_xml(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_no_xml_still_flags_real_markup(tmp_path):
+    """A tag with an attribute (real JSX/HTML, e.g. `<Link prefetch={true}>`)
+    or a matching closing tag is still flagged."""
+    doc = _doc(
+        tmp_path, "x",
+        "name: x\ndescription: 'Audits <Link prefetch={true}> calls and rewrites <b>bold</b> text.'",
+    )
+    sat, diags = rules.check_description_no_xml(doc)
+    assert sat == 0.0
+    assert "<Link prefetch={true}>" in diags[0].message
+    assert "<b>" in diags[0].message
+
+
 def test_references_resolve_flags_broken_and_escaping(tmp_path):
     doc = _doc(
         tmp_path, "refs",
@@ -97,6 +124,80 @@ def test_references_resolve_passes_for_valid_reference(tmp_path):
     path.write_text(
         "---\nname: goodrefs\ndescription: Uses references. Use this skill when asked.\n---\n"
         "\nSee [helper](helper.py) for details.\n",
+        encoding="utf-8",
+    )
+    doc = parse(path)
+    sat, diags = rules.check_references_resolve(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_references_resolve_accepts_a_directory_link(tmp_path):
+    """A markdown link to a folder (e.g. `[templates/](templates/)`) is a
+    normal way to point at a directory for browsing, not a broken file
+    reference \u2014 it resolves as long as the directory is scan-visible and
+    non-empty."""
+    skill_dir = tmp_path / "dirrefs"
+    (skill_dir / "templates").mkdir(parents=True, exist_ok=True)
+    (skill_dir / "templates" / "reply-fix.md").write_text("Fixed.\n", encoding="utf-8")
+    path = skill_dir / "SKILL.md"
+    path.write_text(
+        "---\nname: dirrefs\ndescription: Uses references. Use this skill when asked.\n---\n"
+        "\nSee the templates under [templates/](templates/) for reply phrasing.\n",
+        encoding="utf-8",
+    )
+    doc = parse(path)
+    sat, diags = rules.check_references_resolve(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_references_resolve_rejects_an_empty_directory_link(tmp_path):
+    skill_dir = tmp_path / "emptydirrefs"
+    (skill_dir / "templates").mkdir(parents=True, exist_ok=True)
+    path = skill_dir / "SKILL.md"
+    path.write_text(
+        "---\nname: emptydirrefs\ndescription: Uses references. Use this skill when asked.\n---\n"
+        "\nSee [templates/](templates/).\n",
+        encoding="utf-8",
+    )
+    doc = parse(path)
+    sat, diags = rules.check_references_resolve(doc)
+    assert sat == 0.0
+    assert len(diags) == 1
+
+
+def test_references_resolve_skips_example_syntax_in_code_blocks(tmp_path):
+    """Illustrative example markdown inside a fenced code block (e.g. a
+    template for a *generated* file) is not a live reference the agent needs
+    to load, so it must not be flagged as a broken link."""
+    doc = _doc(
+        tmp_path, "codeblockrefs",
+        "name: codeblockrefs\ndescription: Uses references. Use this skill when asked.",
+        body=(
+            "\nExample structure:\n"
+            "\n```txt\n"
+            "- [Main README](README.md): getting started\n"
+            "- [Spec](spec/technical-spec.md): requirements\n"
+            "```\n"
+        ),
+    )
+    assert rules.check_references_resolve(doc) is None
+
+
+def test_directive_pattern_ignores_prose_and_urls(tmp_path):
+    """'file:'/'source:' inside ordinary prose must not smuggle a malformed
+    duplicate reference (a stray leading '[' from an adjacent markdown link,
+    or a truncated URL) into the extracted set \u2014 only the real markdown
+    link should be captured."""
+    skill_dir = tmp_path / "directiverefs"
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "data.csv").write_text("a,b\n", encoding="utf-8")
+    path = skill_dir / "SKILL.md"
+    path.write_text(
+        "---\nname: directiverefs\ndescription: Uses references. Use this skill when asked.\n---\n"
+        "\nRefer to the example input file: [`data.csv`](data.csv).\n"
+        "\nSee the source: <https://github.com/example/repo> for background.\n",
         encoding="utf-8",
     )
     doc = parse(path)
