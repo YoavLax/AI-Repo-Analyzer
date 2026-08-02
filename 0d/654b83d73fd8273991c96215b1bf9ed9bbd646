@@ -1,0 +1,90 @@
+src/airx/probe.py
+  s_2d2119a75498a4::t_8c5d6bc99f95f0 165
+  s_2d2119a75498a4::t_1deec969cfb605 27-31,39-41
+  s_2d2119a75498a4::t_f2e1ce485fca7f 107-120
+  s_2d2119a75498a4::t_65d903cbe343bc 32-38
+src/airx/rules/agents.py
+  s_2d2119a75498a4::t_f47b1871621b2b 68-73
+src/airx/report/markdown.py
+  s_2d2119a75498a4::t_49c90c5877ca1e 33-46
+src/airx/remediation.py
+  s_2d2119a75498a4::t_d4ef5a1d7b3915 49-70,72-77,84,89-96,102
+  s_2d2119a75498a4::t_eb1a111fe7c2d9 9-20,27
+src/airx/scoring.py
+  s_2d2119a75498a4::t_8f364a811acf95 52-55,270
+tests/test_server.py
+  s_2d2119a75498a4::t_878bf60bdea9ab 80-105
+src/airx/rules/quality.py
+  s_2d2119a75498a4::t_694ba5c737a118 4,6
+src/airx/report/json.py
+  s_2d2119a75498a4::t_4b59a7a4be4b47 105
+src/airx/rules/verification.py
+  s_2d2119a75498a4::t_75ac1d0f3f2216 300-303
+src/airx/report/terminal.py
+  s_2d2119a75498a4::t_e9224601e1cdd4 18-29
+tests/test_report_formats.py
+  s_2d2119a75498a4::t_62106da366c910 72-92
+  s_2d2119a75498a4::t_90bbe25ffd133f 7
+src/airx/rules/scoping.py
+  s_2d2119a75498a4::t_bfdd1264462136 113-117
+src/airx/rules/foundation.py
+  s_2d2119a75498a4::t_1120e5b29f8f53 116
+  s_2d2119a75498a4::t_46c3852785654a 13
+  s_2d2119a75498a4::t_5e5099706bb449 121-137,140
+  s_2d2119a75498a4::t_5ca803332d321b 71-75,98
+tests/test_remediation.py
+  s_2d2119a75498a4::t_281fa489424675 6
+  s_2d2119a75498a4::t_b2ffe3e3f00300 43-68
+web/src/App.tsx
+  s_2d2119a75498a4::t_5514b5de42326d 2,21-25,28-29,31,33,46
+src/airx/rules/registry.py
+  s_2d2119a75498a4::t_6e86a33820832a 157
+  s_2d2119a75498a4::t_ac934a62706574 64-74,95-96,135-136
+docs/RULES.md
+  s_2d2119a75498a4::t_c7ac96fee41fb8 52
+src/airx/report/html.py
+  s_2d2119a75498a4::t_6598144facb333 55-68
+web/src/components/ReportView.tsx
+  s_2d2119a75498a4::t_183de98bb5d6e3 2,9,15-20,74,82,118-119
+  s_2d2119a75498a4::t_f596cf8bd33828 165-173
+  s_2d2119a75498a4::t_d45cead232ba7b 152-158
+tests/test_rules_foundation.py
+  s_2d2119a75498a4::t_6af4e024994668 166-199
+web/src/components/SearchHero.tsx
+  s_2d2119a75498a4::t_5bba1abab99ccc 2,4,18,24,70-71
+web/src/components/PlatformToggle.tsx
+  s_2d2119a75498a4::t_c012f76e0e95d1 1-48
+README.md
+  s_2d2119a75498a4::t_ff85145af07a13 134-138,182-184
+src/airx/rules/safety.py
+  s_2d2119a75498a4::t_47d9fb6b4e5d44 251-290
+  s_2d2119a75498a4::t_d5c49563d182ac 2-3,5-9
+src/airx_server/app.py
+  s_2d2119a75498a4::t_60ffaaa1754720 18,55-57,84-85,87,103,106-108
+  s_2d2119a75498a4::t_7dfb4acd8911a7 86,88
+web/src/api.ts
+  s_2d2119a75498a4::t_b1d4e75bab77d8 13-14,117-118,138-139
+tests/test_probe.py
+  s_2d2119a75498a4::t_9603e15000ac8b 76-93
+  s_2d2119a75498a4::t_1d7ed64c42000c 64-75
+tests/test_rules_safety.py
+  s_2d2119a75498a4::t_9567c40c7c4d10 2,115-153
+src/airx_server/service.py
+  s_2d2119a75498a4::t_a5c8160eab44e3 24,37,53,63,84,101,120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "0d654b83d73fd8273991c96215b1bf9ed9bbd646",
+  "prompts": {},
+  "sessions": {
+    "s_2d2119a75498a4": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "f44b1ed0-b777-4cd8-ad09-9ab5902ed0cd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
