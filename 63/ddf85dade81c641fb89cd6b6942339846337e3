@@ -1,0 +1,26 @@
+src/airx/report/markdown.py
+  s_2d2119a75498a4::t_dd3a3ffbfac77c 79-80
+src/airx/report/terminal.py
+  s_2d2119a75498a4::t_b92efc0001f1cb 51,56,62-63
+web/src/components/FindingsTable.tsx
+  s_2d2119a75498a4::t_98445cd59821a2 122,181-193
+tests/test_report_formats.py
+  s_2d2119a75498a4::t_1740083b8e660e 51
+  s_2d2119a75498a4::t_2f9367699c13f1 71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "63ddf85dade81c641fb89cd6b6942339846337e3",
+  "prompts": {},
+  "sessions": {
+    "s_2d2119a75498a4": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "f44b1ed0-b777-4cd8-ad09-9ab5902ed0cd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
