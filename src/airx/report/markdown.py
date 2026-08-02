@@ -76,6 +76,8 @@ def to_markdown(index: ArtifactIndex, card: ScoreCard) -> str:
             lines.append(f"  {f['message']}")
             if f["fix"]:
                 lines.append(f"  _Fix:_ {f['fix']}")
+            if f["doc_url"]:
+                lines.append(f"  _Source:_ <{f['doc_url']}>")
         lines.append("")
 
     plan = data["remediation_plan"]

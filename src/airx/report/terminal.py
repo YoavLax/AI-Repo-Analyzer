@@ -48,17 +48,19 @@ def to_terminal(index: ArtifactIndex, card: ScoreCard) -> str:
         if not ev.applicable or ev.waived:
             continue
         for path, diag in ev.diagnostics:
-            findings.append((path, diag))
+            findings.append((path, diag, ev.meta.doc_url))
     findings.sort(key=lambda t: (_SEVERITY_ORDER[t[1].severity], str(t[0] or ""), t[1].rule_id))
 
     if findings:
         lines.append(f"Findings ({len(findings)}):")
-        for path, diag in findings:
+        for path, diag, doc_url in findings:
             loc = f"{path}" if path else "(repo)"
             if diag.line:
                 loc += f":{diag.line}"
             lines.append(f"  [{diag.severity.value:7}] {diag.rule_id:32} {loc}")
             lines.append(f"            {diag.message}")
+            if doc_url:
+                lines.append(f"            Source: {doc_url}")
     else:
         lines.append("No findings.")
 

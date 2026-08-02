@@ -48,6 +48,7 @@ def test_markdown_contains_headline_and_findings():
     assert md.startswith("# AI Readiness Report")
     assert "## Pillars" in md
     assert "skills.name.dirname-match" in md
+    assert "_Source:_ <" in md, "each finding should link back to the rule's source doc"
 
 
 def test_sarif_is_valid_and_maps_levels():
@@ -67,6 +68,7 @@ def test_terminal_shows_platform_scores_and_top_fixes():
     text = to_terminal(index, card)
     assert "Platforms:" in text
     assert "Top fixes" in text
+    assert "Source: " in text, "each finding should show the doc_url it's based on"
 
 
 def test_terminal_hides_other_platform_and_parity_when_scoped():
