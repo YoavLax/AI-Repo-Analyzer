@@ -1,0 +1,28 @@
+tests/test_rules_skills.py
+  s_2d2119a75498a4::t_8125efff299cad 56-72
+src/airx/rules/skills.py
+  s_2d2119a75498a4::t_c86f7be9a65910 650
+  s_2d2119a75498a4::t_efeac43bf05aeb 65-70
+  s_2d2119a75498a4::t_b53463f9cf4fd7 649,651
+src/airx/rules/safety.py
+  s_2d2119a75498a4::t_97cd549a8a1ba4 70-88,112
+  s_2d2119a75498a4::t_c9aa10e61e95e3 12
+tests/test_rules_safety.py
+  s_2d2119a75498a4::t_02fe2f461b7f7c 105-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "0cb38bc89705f08fb6d6ece43ef505f19e733998",
+  "prompts": {},
+  "sessions": {
+    "s_2d2119a75498a4": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "f44b1ed0-b777-4cd8-ad09-9ab5902ed0cd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
