@@ -1,0 +1,35 @@
+deploy/helm/agentcompass/templates/ingress.yaml
+  s_2d2119a75498a4::t_38f7a91bf75ffc 36
+  s_2d2119a75498a4::t_8002230592db3f 5-7
+deploy/helm/agentcompass/templates/serviceaccount.yaml
+  s_2d2119a75498a4::t_8002230592db3f 5-7
+deploy/helm/agentcompass/templates/service.yaml
+  s_2d2119a75498a4::t_8002230592db3f 4-15
+deploy/helm/agentcompass/templates/deployment.yaml
+  s_2d2119a75498a4::t_8002230592db3f 4-49
+deploy/helm/agentcompass/templates/NOTES.txt
+  s_2d2119a75498a4::t_8002230592db3f 1-27
+deploy/helm/agentcompass/templates/_helpers.tpl
+  s_2d2119a75498a4::t_8002230592db3f 4-57
+deploy/helm/agentcompass/values.yaml
+  s_2d2119a75498a4::t_38f7a91bf75ffc 51
+  s_2d2119a75498a4::t_8002230592db3f 1-39
+deploy/helm/agentcompass/templates/hpa.yaml
+  s_2d2119a75498a4::t_8002230592db3f 5-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "618a0a1e828e2b851b17ce68429dd1d432566072",
+  "prompts": {},
+  "sessions": {
+    "s_2d2119a75498a4": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "f44b1ed0-b777-4cd8-ad09-9ab5902ed0cd",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
