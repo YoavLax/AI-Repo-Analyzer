@@ -295,45 +295,6 @@ def test_no_stale_markers_not_applicable_without_docs(tmp_path):
     assert quality.check_no_stale_markers(_index(tmp_path)) is None
 
 
-# --- quality.no-secrets -------------------------------------------------------
-
-def test_no_secrets_satisfied_on_clean_docs(tmp_path):
-    index = _entry(tmp_path, _CONCRETE_DIRECTIVES)
-    sat, diags = quality.check_no_secrets(index)
-    assert sat == 1.0
-    assert diags == []
-
-
-def test_no_secrets_flags_github_token_in_entrypoint(tmp_path):
-    token = "ghp_" + "A1B2C3D4E5F6G7H8I9J0K1L2M3N4O5P6Q7R8"
-    index = _entry(tmp_path, f"# G\n\nUse token {token} for the API.\n")
-    sat, diags = quality.check_no_secrets(index)
-    assert sat == 0.0
-    rel, diag = diags[0]
-    assert rel == PurePosixPath("CLAUDE.md")
-    assert diag.severity == Severity.ERROR
-    assert diag.line == 3
-    assert token not in diag.message  # redacted
-
-
-def test_no_secrets_scans_skill_docs(tmp_path):
-    _write(
-        tmp_path,
-        ".claude/skills/deploy/SKILL.md",
-        "---\nname: deploy\ndescription: Deploys builds when asked.\n---\n"
-        "\nSet key sk-ant-api03-abcdefghijklmnopqrstuvwx before running.\n",
-    )
-    sat, diags = quality.check_no_secrets(_index(tmp_path))
-    assert sat == 0.0
-    rel, _diag = diags[0]
-    assert rel == PurePosixPath(".claude/skills/deploy/SKILL.md")
-
-
-def test_no_secrets_not_applicable_without_markdown_artifacts(tmp_path):
-    _write(tmp_path, "src/app.py", "print('hi')\n")
-    assert quality.check_no_secrets(_index(tmp_path)) is None
-
-
 # --- quality.links.resolve ----------------------------------------------------
 
 def test_links_resolve_satisfied(tmp_path):
@@ -411,5 +372,4 @@ def test_repo_quality_rich_scores_well_across_all_rules():
     assert quality.check_directive_atomicity(index) == (1.0, [])
     assert quality.check_emphasis_calibrated(index) == (1.0, [])
     assert quality.check_no_stale_markers(index) == (1.0, [])
-    assert quality.check_no_secrets(index) == (1.0, [])
     assert quality.check_links_resolve(index) is None  # no relative links

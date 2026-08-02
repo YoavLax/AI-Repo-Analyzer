@@ -30,12 +30,20 @@ def to_markdown(index: ArtifactIndex, card: ScoreCard) -> str:
     if score["copilot"] is not None or score["claude"] is not None:
         lines.append("| Platform | Score |")
         lines.append("|---|---|")
-        if score["copilot"] is not None:
-            lines.append(f"| GitHub Copilot | {score['copilot']:.1f} |")
-        if score["claude"] is not None:
-            lines.append(f"| Claude Code | {score['claude']:.1f} |")
-        if score["parity_delta"] is not None:
-            lines.append(f"| Parity delta | {score['parity_delta']:.1f} |")
+        if data["platform"] == "all":
+            if score["copilot"] is not None:
+                lines.append(f"| GitHub Copilot | {score['copilot']:.1f} |")
+            if score["claude"] is not None:
+                lines.append(f"| Claude Code | {score['claude']:.1f} |")
+            if score["parity_delta"] is not None:
+                lines.append(f"| Parity delta | {score['parity_delta']:.1f} |")
+        else:
+            # Single-platform scope: the other platform's score and the
+            # parity delta are noise the user explicitly scoped away from.
+            label = "GitHub Copilot" if data["platform"] == "copilot" else "Claude Code"
+            value = score["copilot"] if data["platform"] == "copilot" else score["claude"]
+            if value is not None:
+                lines.append(f"| {label} | {value:.1f} |")
         lines.append("")
 
     lines.append("## Pillars")

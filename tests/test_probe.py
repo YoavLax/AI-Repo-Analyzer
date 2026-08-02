@@ -61,6 +61,36 @@ def test_languages_histogram_sorted(tmp_path: Path) -> None:
     assert ("ts", 1) in facts.languages
 
 
+def test_devcontainer_detects_dockerfile_naming_variants(tmp_path: Path) -> None:
+    _write(tmp_path, "Dockerfile-varonis-forwarder", "FROM alpine\n")
+    facts = _facts(tmp_path)
+    assert facts.has_devcontainer is True
+
+
+def test_devcontainer_false_for_unrelated_file_containing_docker(tmp_path: Path) -> None:
+    _write(tmp_path, "docker-compose.yml", "services: {}\n")
+    facts = _facts(tmp_path)
+    assert facts.has_devcontainer is False
+
+
+def test_test_evidence_detects_dotnet_test_project(tmp_path: Path) -> None:
+    _write(tmp_path, "MessageTraceConsoleApp.Tests/MessageTraceConsoleApp.Tests.csproj", "<Project />\n")
+    facts = _facts(tmp_path)
+    assert facts.test_evidence is True
+
+
+def test_test_evidence_detects_go_test_files(tmp_path: Path) -> None:
+    _write(tmp_path, "pkg/handler_test.go", "package pkg\n")
+    facts = _facts(tmp_path)
+    assert facts.test_evidence is True
+
+
+def test_test_evidence_detects_maven_test_layout(tmp_path: Path) -> None:
+    _write(tmp_path, "src/test/java/com/example/FooTest.java", "class FooTest {}\n")
+    facts = _facts(tmp_path)
+    assert facts.test_evidence is True
+
+
 def test_empty_repo_has_empty_facts(tmp_path: Path) -> None:
     facts = _facts(tmp_path)
     assert facts.package_scripts == ()

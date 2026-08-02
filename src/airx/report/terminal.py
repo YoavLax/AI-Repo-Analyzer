@@ -15,11 +15,18 @@ def to_terminal(index: ArtifactIndex, card: ScoreCard) -> str:
     lines.append("")
     cap_note = f"  (capped from {card.raw_grade})" if card.grade_capped else ""
     lines.append(f"Overall score: {card.overall:.1f}/100   Grade: {card.grade}{cap_note}")
-    if card.copilot is not None or card.claude is not None:
-        copilot = f"{card.copilot:.1f}" if card.copilot is not None else "n/a"
-        claude = f"{card.claude:.1f}" if card.claude is not None else "n/a"
-        parity = f"   parity delta {card.parity_delta:.1f}" if card.parity_delta is not None else ""
-        lines.append(f"Platforms:     copilot {copilot}   claude {claude}{parity}")
+    if card.platform == "all":
+        if card.copilot is not None or card.claude is not None:
+            copilot = f"{card.copilot:.1f}" if card.copilot is not None else "n/a"
+            claude = f"{card.claude:.1f}" if card.claude is not None else "n/a"
+            parity = f"   parity delta {card.parity_delta:.1f}" if card.parity_delta is not None else ""
+            lines.append(f"Platforms:     copilot {copilot}   claude {claude}{parity}")
+    else:
+        # A single-platform scope: showing the other platform's score and the
+        # parity delta would be noise the user explicitly scoped away from.
+        score = card.copilot if card.platform == "copilot" else card.claude
+        if score is not None:
+            lines.append(f"Platform:      {card.platform} {score:.1f}")
     if card.profile != "standard":
         lines.append(f"Profile:       {card.profile}")
     lines.append("")

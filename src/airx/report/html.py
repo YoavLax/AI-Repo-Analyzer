@@ -52,12 +52,20 @@ def _render_header(data: dict) -> str:
     platform_row = ""
     if score["copilot"] is not None or score["claude"] is not None:
         cells = []
-        if score["copilot"] is not None:
-            cells.append(f'<div class="stat"><span class="stat-label">Copilot</span><span class="stat-value">{score["copilot"]:.1f}</span></div>')
-        if score["claude"] is not None:
-            cells.append(f'<div class="stat"><span class="stat-label">Claude</span><span class="stat-value">{score["claude"]:.1f}</span></div>')
-        if score["parity_delta"] is not None:
-            cells.append(f'<div class="stat"><span class="stat-label">Parity delta</span><span class="stat-value">{score["parity_delta"]:.1f}</span></div>')
+        if data["platform"] == "all":
+            if score["copilot"] is not None:
+                cells.append(f'<div class="stat"><span class="stat-label">Copilot</span><span class="stat-value">{score["copilot"]:.1f}</span></div>')
+            if score["claude"] is not None:
+                cells.append(f'<div class="stat"><span class="stat-label">Claude</span><span class="stat-value">{score["claude"]:.1f}</span></div>')
+            if score["parity_delta"] is not None:
+                cells.append(f'<div class="stat"><span class="stat-label">Parity delta</span><span class="stat-value">{score["parity_delta"]:.1f}</span></div>')
+        else:
+            # Single-platform scope: the other platform's score and the
+            # parity delta are noise the user explicitly scoped away from.
+            label = "Copilot" if data["platform"] == "copilot" else "Claude"
+            value = score["copilot"] if data["platform"] == "copilot" else score["claude"]
+            if value is not None:
+                cells.append(f'<div class="stat"><span class="stat-label">{label}</span><span class="stat-value">{value:.1f}</span></div>')
         platform_row = f'<div class="stat-row">{"".join(cells)}</div>'
 
     return f"""

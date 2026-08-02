@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
-import type { AnalyzeRequest } from "../api";
+import type { AnalyzeRequest, PlatformFilter } from "../api";
 import Logo from "./Logo";
+import PlatformToggle from "./PlatformToggle";
 
 const EXAMPLES = ["vercel/next.js", "facebook/react", "YoavLax/AI-Repo-Analyzer"];
 
@@ -14,12 +15,13 @@ interface SearchHeroProps {
 export function SearchHero({ localMode, onAnalyze }: SearchHeroProps) {
   const [mode, setMode] = useState<InputMode>("github");
   const [value, setValue] = useState("");
+  const [platform, setPlatform] = useState<PlatformFilter>("all");
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const trimmed = value.trim();
     if (!trimmed) return;
-    onAnalyze(mode === "local" ? { path: trimmed } : { source: trimmed });
+    onAnalyze(mode === "local" ? { path: trimmed, platform } : { source: trimmed, platform });
   }
 
   const githubActive = mode === "github";
@@ -64,6 +66,8 @@ export function SearchHero({ localMode, onAnalyze }: SearchHeroProps) {
           </button>
         </div>
       )}
+
+      <PlatformToggle value={platform} onChange={setPlatform} />
 
     <form onSubmit={submit} className="flex w-full max-w-xl flex-col gap-3">
         <div className="flex w-full gap-2">

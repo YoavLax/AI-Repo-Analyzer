@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { analyze, ApiError, version, type AnalyzeRequest, type Report } from "./api";
+import { analyze, ApiError, version, type AnalyzeRequest, type PlatformFilter, type Report } from "./api";
 import ErrorState from "./components/ErrorState";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import ReportView from "./components/ReportView";
@@ -18,13 +18,19 @@ interface AppState {
 
 const INITIAL_STATE: AppState = { status: "idle", report: null, error: null };
 
-/** Reads `?repo=owner/name[&ref=...]` or `?path=...` from the current URL. */
+function isPlatformFilter(value: string | null): value is PlatformFilter {
+  return value === "copilot" || value === "claude" || value === "all";
+}
+
+/** Reads `?repo=owner/name[&ref=...]` or `?path=...`, plus an optional `?platform=`, from the current URL. */
 function requestFromLocation(): AnalyzeRequest | null {
   const params = new URLSearchParams(window.location.search);
+  const platformParam = params.get("platform");
+  const platform: PlatformFilter | undefined = isPlatformFilter(platformParam) ? platformParam : undefined;
   const path = params.get("path");
-  if (path) return { path };
+  if (path) return { path, platform };
   const repo = params.get("repo");
-  if (repo) return { source: repo, ref: params.get("ref") };
+  if (repo) return { source: repo, ref: params.get("ref"), platform };
   return null;
 }
 
@@ -37,6 +43,7 @@ function urlForRequest(request: AnalyzeRequest): string {
     params.set("repo", request.source);
     if (request.ref) params.set("ref", request.ref);
   }
+  if (request.platform && request.platform !== "all") params.set("platform", request.platform);
   return `${window.location.pathname}?${params.toString()}`;
 }
 

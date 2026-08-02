@@ -61,6 +61,17 @@ class RuleMeta:
     why: str = ""
     fix: str = ""
     effort: str = "authoring"
+    #: Per-platform override for `fix`, as (Platform, text) pairs. Used by the
+    #: remediation plan when a single `--platform` filter is active, so a
+    #: cross-platform rule's suggested action only names paths relevant to
+    #: that platform (e.g. omit CLAUDE.md under `--platform copilot`).
+    fix_by_platform: tuple[tuple[Platform, str], ...] = ()
+    #: IDs of other rules that this rule's satisfaction *also* guarantees
+    #: (e.g. a platform-specific entry-point rule implies the cross-platform
+    #: "some entry point exists" rule). The remediation plan uses this to
+    #: avoid listing both as separate, additive-looking top fixes for what is
+    #: really a single action.
+    implies: tuple[str, ...] = ()
 
 
 _REGISTRY: dict[str, RuleMeta] = {}
@@ -81,6 +92,8 @@ def rule(
     why: str = "",
     fix: str = "",
     effort: str = "authoring",
+    fix_by_platform: tuple[tuple[Platform, str], ...] = (),
+    implies: tuple[str, ...] = (),
 ):
     """Decorator that registers a rule function into the global registry.
 
@@ -119,6 +132,8 @@ def rule(
             why=why,
             fix=fix,
             effort=effort,
+            fix_by_platform=tuple(fix_by_platform),
+            implies=tuple(implies),
         )
         return fn
 
@@ -137,9 +152,9 @@ _ADVISORY_ERROR_ALLOWLIST: frozenset[str] = frozenset({
     "skills.description.person-voice",
     "skills.references.resolve",
     "skills.references.escape",
-    "quality.no-secrets",
     "safety.permissions.no-bypass",
     "safety.settings.no-secrets",
+    "safety.artifacts.no-secrets",
     "tooling.mcp.no-secrets",
 })
 

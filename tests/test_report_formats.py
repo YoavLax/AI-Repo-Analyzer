@@ -4,6 +4,7 @@ from pathlib import Path
 
 from airx import fs
 from airx.discovery import build_index
+from airx.model import Platform
 from airx.report import to_html, to_json, to_json_dict, to_markdown, to_sarif, to_terminal
 from airx.scoring import score
 
@@ -66,6 +67,27 @@ def test_terminal_shows_platform_scores_and_top_fixes():
     text = to_terminal(index, card)
     assert "Platforms:" in text
     assert "Top fixes" in text
+
+
+def test_terminal_hides_other_platform_and_parity_when_scoped():
+    tree = fs.scan(FIXTURES / "repo_bad_skill")
+    index = build_index(tree)
+    card = score(index, platform=Platform.COPILOT)
+    text = to_terminal(index, card)
+    assert "Platforms:" not in text
+    assert "Platform:      copilot" in text
+    assert "claude" not in text.split("\n")[2]  # the platform line itself
+    assert "parity" not in text.lower()
+
+
+def test_markdown_hides_other_platform_and_parity_when_scoped():
+    tree = fs.scan(FIXTURES / "repo_bad_skill")
+    index = build_index(tree)
+    card = score(index, platform=Platform.CLAUDE)
+    md = to_markdown(index, card)
+    assert "Claude Code |" in md
+    assert "GitHub Copilot |" not in md
+    assert "Parity delta" not in md
 
 
 def test_html_is_self_contained_and_collapsible():

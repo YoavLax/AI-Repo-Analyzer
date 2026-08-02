@@ -1,15 +1,22 @@
 import { FormEvent, useState } from "react";
-import type { AnalyzeRequest, ApiError, Report } from "../api";
+import type { AnalyzeRequest, ApiError, PlatformFilter, Report } from "../api";
 import { formatDelta, formatScore, shortSha } from "../format";
 import type { Theme } from "../theme";
 import ErrorState from "./ErrorState";
 import FindingsTable from "./FindingsTable";
 import Logo from "./Logo";
 import PillarTable from "./PillarTable";
+import PlatformToggle from "./PlatformToggle";
 import ScoreRing from "./ScoreRing";
 import ThemeToggle from "./ThemeToggle";
 import TopFixes from "./TopFixes";
 import WaiversPanel from "./WaiversPanel";
+
+const PLATFORM_LABEL: Record<PlatformFilter, string> = {
+  all: "All",
+  copilot: "Copilot",
+  claude: "Claude Code",
+};
 
 function Spinner() {
   return (
@@ -64,6 +71,7 @@ export function ReportView({
   onDismissError,
 }: ReportViewProps) {
   const [reInput, setReInput] = useState("");
+  const [platform, setPlatform] = useState<PlatformFilter>(report.platform);
   const { score, meta } = report;
 
   function submit(event: FormEvent) {
@@ -71,7 +79,7 @@ export function ReportView({
     if (loading) return;
     const trimmed = reInput.trim();
     if (!trimmed) return;
-    onAnalyze(meta.mode === "local-path" ? { path: trimmed } : { source: trimmed });
+    onAnalyze(meta.mode === "local-path" ? { path: trimmed, platform } : { source: trimmed, platform });
   }
 
   const sha = shortSha(meta.resolved_sha);
@@ -107,7 +115,8 @@ export function ReportView({
             {meta.source}
             {meta.ref ? `@${meta.ref}` : ""}
           </span>
-          <form onSubmit={submit} className="ml-auto flex items-center gap-2">
+          <form onSubmit={submit} className="ml-auto flex flex-wrap items-center gap-2">
+            <PlatformToggle value={platform} onChange={setPlatform} disabled={loading} />
             <label htmlFor="reanalyze-input" className="sr-only">
               Analyze another repository
             </label>
@@ -140,15 +149,28 @@ export function ReportView({
           <ErrorState error={error} onDismiss={onDismissError} />
         )}
 
+        {report.platform !== "all" && (
+          <p className="text-center text-xs font-medium text-brand">
+            Scored for {PLATFORM_LABEL[report.platform]} only &mdash; pillars and findings below exclude
+            rules that only apply to the other platform.
+          </p>
+        )}
+
         {/* Summary row */}
         <div className="grid gap-4 md:grid-cols-[auto_1fr]">
           <div className="card flex items-center justify-center p-6">
             <ScoreRing score={score} />
           </div>
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-2">
-            <StatCard label="Copilot score" value={formatScore(score.copilot)} hint="platform score / 100" />
-            <StatCard label="Claude score" value={formatScore(score.claude)} hint="platform score / 100" />
-            <StatCard label="Parity delta" value={formatDelta(score.parity_delta)} hint="Copilot vs Claude gap" />
+            {report.platform !== "claude" && (
+              <StatCard label="Copilot score" value={formatScore(score.copilot)} hint="platform score / 100" />
+            )}
+            {report.platform !== "copilot" && (
+              <StatCard label="Claude score" value={formatScore(score.claude)} hint="platform score / 100" />
+            )}
+            {report.platform === "all" && (
+              <StatCard label="Parity delta" value={formatDelta(score.parity_delta)} hint="Copilot vs Claude gap" />
+            )}
             <StatCard
               label="Findings"
               value={String(report.findings.length)}

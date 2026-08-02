@@ -10,6 +10,8 @@
 export type SeverityLevel = "error" | "warning" | "info";
 export type EffortLevel = "mechanical" | "additive" | "authoring" | "organizational";
 export type GradeLetter = "A" | "B" | "C" | "D" | "E" | "F";
+/** Restricts scoring to one agent harness's rules; "all" scores both (default). */
+export type PlatformFilter = "all" | "copilot" | "claude";
 
 export interface Finding {
   rule_id: string;
@@ -112,6 +114,8 @@ export interface Report {
   tool_version: string;
   ruleset_version: string;
   profile: string;
+  /** The `--platform`/API filter this report was scored with ("all" when unscoped). */
+  platform: PlatformFilter;
   target: { root: string };
   score: Score;
   pillars: PillarScore[];
@@ -131,8 +135,8 @@ export interface VersionInfo {
 }
 
 export type AnalyzeRequest =
-  | { source: string; ref?: string | null }
-  | { path: string };
+  | ({ source: string; ref?: string | null } & { platform?: PlatformFilter })
+  | ({ path: string } & { platform?: PlatformFilter });
 
 /** Server error body: {"error": {"code", "message"}}. */
 interface ErrorBody {

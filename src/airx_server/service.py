@@ -21,6 +21,7 @@ from airx.ingest import (
     MAX_FILE_BYTES,
     MAX_TOTAL_BYTES,
 )
+from airx.model import Platform
 from airx.report import to_json_dict
 from airx.scoring import score
 from airx_server.config import Settings
@@ -33,7 +34,7 @@ class ServiceError(Exception):
         self.status = status
 
 
-def _analyze_tree(tree: fs.RepoTree) -> dict:
+def _analyze_tree(tree: fs.RepoTree, platform: Platform | None = None) -> dict:
     """Run the pipeline exactly as the CLI does, including the analyzed
     repository's own `.airx.yml` (profile, ignores, waivers) — otherwise a web
     score would silently diverge from `airx analyze` on the same commit.
@@ -49,7 +50,7 @@ def _analyze_tree(tree: fs.RepoTree) -> dict:
     if profile not in ("minimal", "standard", "enterprise"):
         raise ServiceError(f"This repository's .airx.yml sets an unknown profile: {profile!r}", 422)
     index = build_index(tree)
-    return to_json_dict(index, score(index, profile=profile, airx=config))
+    return to_json_dict(index, score(index, profile=profile, airx=config, platform=platform))
 
 
 def analyze_remote(
@@ -59,6 +60,7 @@ def analyze_remote(
     max_fetch_files: int = MAX_FETCH_FILES,
     max_file_bytes: int = MAX_FILE_BYTES,
     max_total_bytes: int = MAX_TOTAL_BYTES,
+    platform: Platform | None = None,
 ) -> dict:
     remote = parse_github_url(source)
     if remote is None:
@@ -79,7 +81,7 @@ def analyze_remote(
             )
         except IngestError as exc:
             raise ServiceError(exc.user_message, exc.status) from exc
-        report = _analyze_tree(tree)
+        report = _analyze_tree(tree, platform=platform)
     report["meta"] = {
         "source": f"{remote.owner}/{remote.repo}",
         "ref": remote.ref,
@@ -96,7 +98,7 @@ def analyze_remote(
     return report
 
 
-def analyze_local(path_arg: str, settings: Settings) -> dict:
+def analyze_local(path_arg: str, settings: Settings, platform: Platform | None = None) -> dict:
     if not settings.allow_local_paths or settings.local_repos_root is None:
         raise ServiceError(
             "Local-path analysis is disabled on this deployment. "
@@ -115,7 +117,7 @@ def analyze_local(path_arg: str, settings: Settings) -> dict:
 
     started = time.monotonic()
     tree = fs.scan(candidate)
-    report = _analyze_tree(tree)
+    report = _analyze_tree(tree, platform=platform)
     report["meta"] = {
         "source": path_arg,
         "ref": None,

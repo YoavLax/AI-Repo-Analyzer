@@ -77,6 +77,32 @@ def test_analyze_requires_exactly_one_input():
     assert client.post("/api/analyze", json={"source": "o/r", "path": "x"}).status_code == 400
 
 
+def test_analyze_defaults_to_platform_all():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    data = client.post("/api/analyze", json={"source": "o/r"}).json()
+    assert data["platform"] == "all"
+
+
+def test_analyze_honors_platform_filter():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    all_report = client.post("/api/analyze", json={"source": "o/r", "platform": "all"}).json()
+    claude_report = client.post("/api/analyze", json={"source": "o/r", "platform": "claude"}).json()
+    assert claude_report["platform"] == "claude"
+    # A platform-scoped report evaluates a subset of rules, so it must not
+    # simply equal the unfiltered ("all") pillar/finding set.
+    assert claude_report["pillars"] != all_report["pillars"] or claude_report["findings"] != all_report["findings"]
+    # Sub-scores are always computed unfiltered regardless of the active filter.
+    assert claude_report["score"]["copilot"] == all_report["score"]["copilot"]
+    assert claude_report["score"]["claude"] == all_report["score"]["claude"]
+
+
+def test_analyze_rejects_invalid_platform():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    response = client.post("/api/analyze", json={"source": "o/r", "platform": "vscode"})
+    assert response.status_code == 400
+    assert "platform" in response.json()["error"]["message"]
+
+
 def test_local_mode_disabled_by_default():
     client = _client()
     response = client.post("/api/analyze", json={"path": "some-repo"})

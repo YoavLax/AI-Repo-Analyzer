@@ -102,6 +102,7 @@ def to_json_dict(index: ArtifactIndex, card: ScoreCard) -> dict:
         "tool_version": __version__,
         "ruleset_version": RULESET_VERSION,
         "profile": card.profile,
+        "platform": card.platform,
         "target": {"root": str(index.root)},
         "score": {
             "overall": card.overall,

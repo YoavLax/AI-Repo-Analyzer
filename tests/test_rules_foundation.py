@@ -163,6 +163,40 @@ def test_entrypoint_parses_not_applicable_without_entrypoint_artifacts(tmp_path)
     assert foundation.check_entrypoint_parses(_index(root)) is None
 
 
+# --- foundation.claude.entrypoint --------------------------------------------
+
+def test_claude_entrypoint_satisfied_with_claude_md(tmp_path):
+    root = _repo(tmp_path, {"CLAUDE.md": "# Memory\n"})
+    sat, diags = foundation.check_claude_entrypoint(_index(root))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_claude_entrypoint_suggests_agents_md_bridge_when_agents_md_present(tmp_path):
+    root = _repo(tmp_path, {"AGENTS.md": "# Agents\n"})
+    sat, diags = foundation.check_claude_entrypoint(_index(root))
+    assert sat == 0.0
+    assert "@AGENTS.md" in diags[0].message
+
+
+def test_claude_entrypoint_suggests_copilot_instructions_bridge_without_agents_md(tmp_path):
+    # Repo has a Copilot entry point but no AGENTS.md at all: suggesting to
+    # bridge to a nonexistent AGENTS.md would be inactionable advice.
+    root = _repo(tmp_path, {".github/copilot-instructions.md": "# Copilot\n"})
+    sat, diags = foundation.check_claude_entrypoint(_index(root))
+    assert sat == 0.0
+    assert "@AGENTS.md" not in diags[0].message
+    assert "@.github/copilot-instructions.md" in diags[0].message
+
+
+def test_claude_entrypoint_generic_message_without_any_entrypoint(tmp_path):
+    root = _repo(tmp_path, {"README.md": "# Readme\n"})
+    sat, diags = foundation.check_claude_entrypoint(_index(root))
+    assert sat == 0.0
+    assert "@AGENTS.md" not in diags[0].message
+    assert "@.github/copilot-instructions.md" not in diags[0].message
+
+
 # --- metadata backfill --------------------------------------------------------
 
 def test_foundation_metadata_backfill():

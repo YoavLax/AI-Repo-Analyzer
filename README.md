@@ -131,6 +131,11 @@ repository URL into the browser, get the full report: overall score and grade,
 Copilot/Claude platform bars, per-pillar breakdown, filterable findings, and
 the ranked top fixes.
 
+A **Copilot / Claude Code / All** toggle scopes the report to one agent
+harness, so a Claude Code-only (or Copilot-only) team isn't scored against
+rules for a harness they don't use. The selection carries over on re-analysis
+and is reflected in the shareable URL (`?platform=claude`).
+
 The scan is **clone-free**: one GitHub Trees API call lists every file in the
 repository, and only the files the rules actually read — classified AI
 artifacts, the four probe files, skill directories — are fetched (kilobytes,
@@ -174,6 +179,9 @@ All configuration is environment variables:
   JSON report plus a `meta` block (`source`, `ref`, `resolved_sha`,
   `listed_files`, `fetched_files`, `duration_ms`). Errors come back as
   `{"error": {"code", "message"}}` with `400`/`404`/`413`/`422`/`429`.
+  An optional `"platform": "copilot"|"claude"|"all"` field scopes scoring to
+  one platform's rules (default `"all"`), mirroring the CLI's `--platform`
+  flag; the applied value is echoed back as the report's top-level `platform` key.
 - `GET /api/health` — liveness. `GET /api/version` — `{version, local_mode}`.
 
 ### Private repositories
