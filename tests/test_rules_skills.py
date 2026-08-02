@@ -53,6 +53,23 @@ def test_description_person_voice_passes_third_person(tmp_path):
     assert sat == 1.0
 
 
+def test_description_person_voice_ignores_when_you_trigger_clause(tmp_path):
+    doc = _doc(
+        tmp_path, "x",
+        "name: x\ndescription: Use when you need to fix a failing test before committing.",
+    )
+    sat, diags = rules.check_description_person_voice(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_description_person_voice_flags_second_person_outside_trigger_clause(tmp_path):
+    doc = _doc(tmp_path, "x", "name: x\ndescription: You can generate reports and validate data.")
+    sat, diags = rules.check_description_person_voice(doc)
+    assert sat == 0.0
+    assert diags[0].severity == Severity.ERROR
+
+
 def test_description_quality_scores_good_over_bad(tmp_path):
     good = _doc(
         tmp_path, "good",

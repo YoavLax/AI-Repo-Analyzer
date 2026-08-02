@@ -102,6 +102,16 @@ def test_gitignored_fires_on_committed_fixture():
     assert len(diags) == 2
 
 
+def test_gitignored_recognizes_glob_pattern_coverage(tmp_path):
+    index = _repo(tmp_path, {
+        "CLAUDE.md": "# Memory\n",
+        ".gitignore": "__pycache__/\nCLAUDE.local.md\n.claude/*.local.*\n",
+    })
+    sat, diags = safety.check_local_files_gitignored(index)
+    assert sat == 1.0
+    assert diags == []
+
+
 # --- safety.permissions.no-bypass --------------------------------------------
 
 

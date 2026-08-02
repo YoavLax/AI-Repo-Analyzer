@@ -62,6 +62,12 @@ _FIRST_PERSON_RE = re.compile(
     re.MULTILINE,
 )
 _SECOND_PERSON_RE = re.compile(r"\b[Yy]ou\s+(?:can|will|should|must|need|are|have|do|get|use)\b")
+# A "when you ..." clause (e.g. "Use when you need to fix a failing test") is
+# a standard, encouraged trigger-condition construction (see
+# _TRIGGER_PATTERNS below) describing when the *user* invokes the skill, not
+# a second-person capability statement describing what the skill itself
+# does \u2014 it must not be flagged as a style violation.
+_TRIGGER_CLAUSE_YOU_RE = re.compile(r"\bwhen\s*$", re.IGNORECASE)
 
 _ACTION_VERBS = frozenset({
     "generates", "analyzes", "validates", "deploys", "processes", "creates", "builds",
@@ -640,8 +646,9 @@ def check_description_person_voice(doc: ParsedDocument):
         return 0.0, [Diagnostic(rule_id="skills.description.person-voice", severity=Severity.ERROR,
                                  message=f"Description uses first-person voice ('{m.group().strip()}'). "
                                          f"Use third person, e.g. 'Generates...' or 'Validates...'.")]
-    m = _SECOND_PERSON_RE.search(desc)
-    if m:
+    for m in _SECOND_PERSON_RE.finditer(desc):
+        if _TRIGGER_CLAUSE_YOU_RE.search(desc[:m.start()]):
+            continue
         return 0.0, [Diagnostic(rule_id="skills.description.person-voice", severity=Severity.ERROR,
                                  message=f"Description uses second-person voice ('{m.group()}'). "
                                          f"Use third person, e.g. 'Generates...' or 'Validates...'.")]

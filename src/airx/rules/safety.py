@@ -9,6 +9,7 @@ values / credential shapes, not stylistic heuristics.
 """
 from __future__ import annotations
 
+import fnmatch
 import re
 from pathlib import PurePosixPath
 from typing import Any
@@ -66,6 +67,25 @@ def check_local_files_not_committed(index: ArtifactIndex):
     return 0.0, diags
 
 
+def _gitignore_line_covers(line: str, entry: str) -> bool:
+    """True when a .gitignore line covers a local-file entry.
+
+    Handles both a literal/substring match (the historical check) and
+    gitignore-style glob patterns (e.g. ``.claude/*.local.*`` legitimately
+    covers ``.claude/settings.local.json`` even though the two strings never
+    appear as a substring of one another). Negated patterns (``!...``) are
+    never treated as coverage.
+    """
+    line = line.strip()
+    if not line or line.startswith("#") or line.startswith("!"):
+        return False
+    if entry in line:
+        return True
+    pattern = line.lstrip("/")
+    basename = entry.rsplit("/", 1)[-1]
+    return fnmatch.fnmatch(entry, pattern) or fnmatch.fnmatch(basename, pattern)
+
+
 @rule(
     id="safety.local-files.gitignored", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
     applicability=Applicability.QUALITY, weight=4, severity=Severity.WARNING,
@@ -89,7 +109,7 @@ def check_local_files_gitignored(index: ArtifactIndex):
     lines = index.facts.gitignore_lines if index.facts is not None else ()
     missing = [
         entry for entry in config.LOCAL_FILE_GITIGNORE_ENTRIES
-        if not any(entry in line for line in lines)
+        if not any(_gitignore_line_covers(line, entry) for line in lines)
     ]
     if not missing:
         return 1.0, []
