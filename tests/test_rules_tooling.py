@@ -4,8 +4,9 @@ Each rule is exercised directly against an ArtifactIndex built from either a
 tiny repo written into tmp_path or one of the committed tooling fixtures.
 """
 from pathlib import Path, PurePosixPath
+import json
 
-from airx import fs
+from airx import config, fs
 from airx.discovery import build_index
 from airx.model import Severity
 from airx.rules import tooling as rules
@@ -120,6 +121,39 @@ def test_mcp_no_secrets_not_applicable_without_mcp(tmp_path):
     assert rules.check_mcp_no_secrets(_index(tmp_path)) is None
 
 
+# --- tooling.mcp.not-overloaded (v0.3.0) -------------------------------------
+
+def test_mcp_not_overloaded_passes_under_ceiling(tmp_path):
+    _write(tmp_path, ".mcp.json", '{"mcpServers": {"a": {"command": "x"}, "b": {"command": "x"}}}')
+    sat, diags = rules.check_mcp_not_overloaded(_index(tmp_path))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_mcp_not_overloaded_flags_past_ceiling(tmp_path):
+    servers = {f"server{i}": {"command": "x"} for i in range(config.MCP_SERVER_SOFT_CEILING + 1)}
+    _write(tmp_path, ".mcp.json", json.dumps({"mcpServers": servers}))
+    sat, diags = rules.check_mcp_not_overloaded(_index(tmp_path))
+    assert sat == 0.0
+    assert diags[0].severity == Severity.INFO
+    assert str(config.MCP_SERVER_SOFT_CEILING + 1) in diags[0].message
+
+
+def test_mcp_not_overloaded_counts_across_files(tmp_path):
+    half = config.MCP_SERVER_SOFT_CEILING // 2 + 1
+    servers_a = {f"a{i}": {"command": "x"} for i in range(half)}
+    servers_b = {f"b{i}": {"command": "x"} for i in range(half)}
+    _write(tmp_path, ".mcp.json", json.dumps({"mcpServers": servers_a}))
+    _write(tmp_path, ".vscode/mcp.json", json.dumps({"servers": servers_b}))
+    sat, diags = rules.check_mcp_not_overloaded(_index(tmp_path))
+    assert sat == 0.0
+
+
+def test_mcp_not_overloaded_na_without_mcp(tmp_path):
+    _write(tmp_path, "README.md", "# hello\n")
+    assert rules.check_mcp_not_overloaded(_index(tmp_path)) is None
+
+
 # --- tooling.setup.script ----------------------------------------------------
 
 def test_setup_script_satisfied(tmp_path):
@@ -147,6 +181,22 @@ def test_devcontainer_satisfied_by_fixture():
 def test_devcontainer_violated(tmp_path):
     _write(tmp_path, "README.md", "# hello\n")
     sat, diags = rules.check_devcontainer(_index(tmp_path))
+    assert sat == 0.0
+    assert diags[0].severity == Severity.INFO
+
+
+# --- tooling.copilot-setup-steps.present (v0.3.0) ----------------------------
+
+def test_copilot_setup_steps_present_satisfied(tmp_path):
+    _write(tmp_path, ".github/workflows/copilot-setup-steps.yml", "name: setup\n")
+    sat, diags = rules.check_copilot_setup_steps_present(_index(tmp_path))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_copilot_setup_steps_present_violated(tmp_path):
+    _write(tmp_path, ".github/workflows/ci.yml", "name: ci\n")
+    sat, diags = rules.check_copilot_setup_steps_present(_index(tmp_path))
     assert sat == 0.0
     assert diags[0].severity == Severity.INFO
 

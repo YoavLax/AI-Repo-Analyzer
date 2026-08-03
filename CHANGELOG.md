@@ -15,6 +15,45 @@ report schema, and determinism contract are untouched — ingest happens before
 the pipeline, exactly like the CLI's clone path.
 
 ### Added
+- **10 new rules** (catalog now 104) from a 2026-08 best-practice research
+  pass over `shanraisshan/claude-code-best-practice`, humanlayer.dev's
+  "Writing a good CLAUDE.md", SFEIR Institute's Claude Code best practices,
+  GitHub Copilot's cloud-agent docs, and agentskills.io:
+  - *foundation*: `foundation.entrypoint.conditional-references` (progressive
+    disclosure applied to entry-point references); GEMINI.md is now recognized
+    as an additional Copilot-visible entry point (`foundation.entrypoint.present`,
+    `foundation.copilot.entrypoint`) and participates in every entry-point
+    quality check.
+  - *quality*: `quality.entrypoint.no-lint-rules` ("Claude is not an expensive
+    linter" — flags code-style micro-rules that duplicate a linter config),
+    `quality.references.pointers-not-snippets` (referenced companion docs
+    shouldn't embed large, stale-prone code blocks).
+  - *agents*: `agents.commands.present` and `agents.commands.frontmatter.valid`
+    (`.claude/commands/**/*.md`, a new discovered artifact kind), and
+    `agents.mcp-servers.resolve` (an agent's `mcp-servers`/`mcpServers`
+    frontmatter values must name a server actually declared in the repo's MCP
+    config).
+  - *safety*: `safety.permissions.least-privilege` (flags unrestricted Bash
+    grants — bare `Bash`, `Bash(*)`, or `"*"` — in committed
+    `.claude/settings.json` `permissions.allow`).
+  - *tooling*: `tooling.mcp.not-overloaded` (soft ceiling on declared MCP
+    servers) and `tooling.copilot-setup-steps.present` (a new discovered
+    artifact kind, `.github/workflows/copilot-setup-steps.yml`, that
+    pre-installs dependencies for Copilot's cloud-agent environment).
+  - *verification*: `verify.hooks.enforces-lint` (at least one hook should
+    run the formatter/linter mechanically instead of leaving style review to
+    the agent).
+- **Schema currency fixes** found by the same research pass, reducing false
+  positives in existing rules: `KNOWN_FRONTMATTER_FIELDS` (SKILL.md/command
+  schema) gained `when_to_use`, `disallowed-tools`, `paths`, `effort`,
+  `background`, `shell`, `arguments`; `KNOWN_AGENT_FIELDS` gained the current
+  16-field Claude subagent schema (`disallowedTools`, `permissionMode`,
+  `maxTurns`, `skills`, `mcpServers`, `hooks`, `memory`, `background`,
+  `effort`, `isolation`, `initialPrompt`); `KNOWN_CLAUDE_SETTINGS_KEYS` grew
+  from ~20 to ~90 keys to match the now-documented `.claude/settings.json`
+  surface (`safety.settings.valid`).
+- Ruleset version bumped to `0.3.0` (report `schema_version` is unchanged;
+  see `plan.md` §3, determinism guarantee D7).
 - **AgentCompass web UI** (`web/`): React 18 + TypeScript + Vite + Tailwind
   single-page app — URL input hero, score ring with grade, Copilot/Claude
   platform bars with parity delta, pillar table, findings with severity

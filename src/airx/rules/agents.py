@@ -28,6 +28,13 @@ from airx.tokenizer import estimate_tokens
 _DOC_URL_CLAUDE_AGENTS = "https://code.claude.com/docs/en/sub-agents"
 _DOC_URL_COPILOT_AGENTS = "https://code.visualstudio.com/docs/copilot/customization/custom-agents"
 _DOC_URL_PROMPTS = "https://code.visualstudio.com/docs/copilot/customization/prompt-files"
+_DOC_URL_COMMANDS = "https://code.claude.com/docs/en/commands"
+_DOC_URL_MCP = "https://code.claude.com/docs/en/mcp"
+
+#: Container keys under which MCP server definitions live (mirrors
+#: airx.rules.tooling._MCP_SERVER_KEYS; duplicated locally to keep the two
+#: pillars independent of each other's internals).
+_MCP_SERVER_KEYS: tuple[str, ...] = ("mcpServers", "servers")
 
 #: One diagnostic per file, keyed by repo-relative path (scoring normalizes
 #: these tuples into path-annotated findings).
@@ -98,6 +105,26 @@ def check_prompts_present(index: ArtifactIndex):
     return 0.0, [Diagnostic(
         rule_id="prompts.present", severity=Severity.INFO,
         message="No reusable prompt files found (.github/prompts/**/*.prompt.md).",
+    )]
+
+
+@rule(
+    id="agents.commands.present", pillar=Pillar.AGENTS, scope=RuleScope.REPO,
+    applicability=Applicability.PRESENCE, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url=_DOC_URL_COMMANDS,
+    platforms=(Platform.CLAUDE,),
+    why="Custom commands turn a recurring workflow (review checklist, release steps) into a "
+        "one-invocation, reviewable, versioned prompt instead of a re-typed instruction.",
+    fix="Add a *.md file under .claude/commands/ for a recurring task, invoked as /<name>.",
+    effort="authoring",
+    summary="At least one reusable Claude custom command exists (.claude/commands/**/*.md).",
+)
+def check_commands_present(index: ArtifactIndex):
+    if index.commands:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="agents.commands.present", severity=Severity.INFO,
+        message="No reusable Claude commands found (.claude/commands/**/*.md).",
     )]
 
 
@@ -400,4 +427,120 @@ def check_prompts_frontmatter_valid(index: ArtifactIndex):
                 ))
         sats.append(1.0 if not file_diags else 0.0)
         diags.extend((p.rel_path, d) for d in file_diags)
+    return _mean(sats), diags
+
+
+# =============================================================================
+# command frontmatter (v0.3.0)
+# =============================================================================
+
+@rule(
+    id="agents.commands.frontmatter.valid", pillar=Pillar.AGENTS, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
+    source=RuleSource.SPEC, doc_url=_DOC_URL_COMMANDS,
+    platforms=(Platform.CLAUDE,),
+    why="Unknown command fields are silently ignored, and a dangling `agent:` reference makes "
+        "`context: fork` silently fall back to the default general-purpose agent.",
+    fix="Keep command frontmatter within the known field set and point `agent:` at an existing "
+        "agent file's name or filename stem.",
+    effort="mechanical",
+    summary="Claude command frontmatter uses only known fields, and any `agent:` reference "
+            "resolves to an existing agent.",
+)
+def check_commands_frontmatter_valid(index: ArtifactIndex):
+    commands = [a for a in _sorted_artifacts(index.commands) if a.doc is not None]
+    if not commands:
+        return None
+    agent_names = _known_agent_names(index)
+    sats: list[float] = []
+    diags: list[FileDiag] = []
+    for c in commands:
+        fm = c.doc.frontmatter
+        file_diags: list[Diagnostic] = []
+        if fm:  # a command with no frontmatter passes: nothing to validate.
+            for field in sorted(str(f) for f in fm if str(f) not in config.KNOWN_COMMAND_FIELDS):
+                file_diags.append(Diagnostic(
+                    rule_id="agents.commands.frontmatter.valid", severity=Severity.WARNING,
+                    message=f"Unknown command frontmatter field '{field}'.",
+                ))
+            agent_ref = fm.get("agent")
+            if isinstance(agent_ref, str) and agent_ref.strip() and agent_ref.strip() not in agent_names:
+                file_diags.append(Diagnostic(
+                    rule_id="agents.commands.frontmatter.valid", severity=Severity.WARNING,
+                    message=f"Command references agent '{agent_ref.strip()}' but no agent file with that "
+                            f"frontmatter name or filename stem exists.",
+                ))
+        sats.append(1.0 if not file_diags else 0.0)
+        diags.extend((c.rel_path, d) for d in file_diags)
+    return _mean(sats), diags
+
+
+# =============================================================================
+# agents.mcp-servers.resolve (v0.3.0)
+# =============================================================================
+
+def _known_mcp_server_names(index: ArtifactIndex) -> frozenset[str]:
+    """Server names declared across every MCP config file in the repository."""
+    names: set[str] = set()
+    for artifact in index.mcp:
+        data = artifact.json_data
+        if not isinstance(data, dict):
+            continue
+        for key in _MCP_SERVER_KEYS:
+            container = data.get(key)
+            if isinstance(container, dict):
+                names.update(str(name) for name in container)
+    return frozenset(names)
+
+
+def _mcp_server_refs(fm) -> list[str]:
+    """Normalize an agent's `mcp-servers`/`mcpServers` frontmatter field (a
+    comma-separated string or a YAML list) into a list of server-name strings.
+    List entries that are inline `{name: config}` objects contribute their key."""
+    raw = fm.get("mcpServers", fm.get("mcp-servers"))
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [s.strip() for s in raw.split(",") if s.strip()]
+    if isinstance(raw, list):
+        refs: list[str] = []
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                refs.append(item.strip())
+            elif isinstance(item, dict) and len(item) == 1:
+                refs.append(str(next(iter(item))))
+        return refs
+    return []
+
+
+@rule(
+    id="agents.mcp-servers.resolve", pillar=Pillar.AGENTS, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
+    source=RuleSource.SPEC, doc_url=_DOC_URL_MCP,
+    why="An agent scoped to a nonexistent MCP server silently loses that tool access instead of "
+        "failing loudly, so the agent quietly can't do what its author intended.",
+    fix="Fix the server name, or declare the missing server in .mcp.json / .vscode/mcp.json.",
+    effort="mechanical",
+    summary="Values in an agent's `mcp-servers`/`mcpServers` frontmatter field correspond to "
+            "server names actually declared in the repository's MCP config.",
+)
+def check_agents_mcp_servers_resolve(index: ArtifactIndex):
+    agents = [a for a in _agent_docs(index) if _mcp_server_refs(a.doc.frontmatter)]
+    if not agents:
+        return None  # N/A: no agent scopes itself to specific MCP servers
+    known = _known_mcp_server_names(index)
+    sats: list[float] = []
+    diags: list[FileDiag] = []
+    for a in agents:
+        unresolved = [name for name in _mcp_server_refs(a.doc.frontmatter) if name not in known]
+        if not unresolved:
+            sats.append(1.0)
+        else:
+            sats.append(0.0)
+            for name in unresolved:
+                diags.append((a.rel_path, Diagnostic(
+                    rule_id="agents.mcp-servers.resolve", severity=Severity.WARNING,
+                    message=f"Agent references MCP server '{name}' but no MCP config in this "
+                            f"repository declares a server with that name.",
+                )))
     return _mean(sats), diags

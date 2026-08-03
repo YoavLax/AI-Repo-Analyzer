@@ -13,7 +13,7 @@ from typing import Any, Iterator
 
 from airx import config
 from airx.discovery import ArtifactIndex
-from airx.model import Applicability, Diagnostic, Pillar, RuleSource, Severity
+from airx.model import Applicability, Diagnostic, Pillar, Platform, RuleSource, Severity
 from airx.rules.registry import RuleScope, rule
 
 #: Compiled high-precision credential shapes (config.SECRET_SHAPE_PATTERNS).
@@ -186,6 +186,41 @@ def check_mcp_no_secrets(index: ArtifactIndex):
     return 1.0, []
 
 
+@rule(
+    id="tooling.mcp.not-overloaded", pillar=Pillar.TOOLING, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://code.claude.com/docs/en/mcp",
+    summary=f"MCP configuration declares at most {config.MCP_SERVER_SOFT_CEILING} servers "
+            f"across all files.",
+    why="Real-world usage reports that declaring far more MCP servers than are actually used "
+        "daily causes tool-selection confusion and eats context on every turn.",
+    fix="Trim the MCP config to the servers actually used day to day; move the rest to a "
+        "per-project or on-demand config instead of loading them in every session.",
+    effort="mechanical",
+)
+def check_mcp_not_overloaded(index: ArtifactIndex):
+    if not index.mcp:
+        return None  # N/A: no MCP files
+    names: set[str] = set()
+    for artifact in _sorted_mcp(index):
+        data = artifact.json_data
+        if not isinstance(data, dict):
+            continue
+        for key in _MCP_SERVER_KEYS:
+            container = data.get(key)
+            if isinstance(container, dict):
+                names.update(str(n) for n in container)
+    count = len(names)
+    if count <= config.MCP_SERVER_SOFT_CEILING:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="tooling.mcp.not-overloaded", severity=Severity.INFO,
+        message=f"{count} MCP servers are declared, past the soft ceiling of "
+                f"{config.MCP_SERVER_SOFT_CEILING}; trim to the ones actually used daily.",
+    )]
+
+
 # --- Repo-fact rules ---------------------------------------------------------
 
 @rule(
@@ -230,6 +265,30 @@ def check_devcontainer(index: ArtifactIndex):
     return 0.0, [Diagnostic(
         rule_id="tooling.devcontainer", severity=Severity.INFO,
         message="No .devcontainer/ directory or Dockerfile found.",
+    )]
+
+
+@rule(
+    id="tooling.copilot-setup-steps.present", pillar=Pillar.TOOLING, scope=RuleScope.REPO,
+    applicability=Applicability.PRESENCE, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://docs.github.com/en/copilot/tutorials/cloud-agent/get-the-best-results"
+            "#pre-installing-dependencies-in-github-copilots-environment",
+    summary="A .github/workflows/copilot-setup-steps.yml pre-installs dependencies in "
+            "Copilot cloud agent's ephemeral environment.",
+    platforms=(Platform.COPILOT,),
+    why="Without this workflow, Copilot cloud agent must discover and install dependencies "
+        "itself by trial and error before it can build, test, or lint anything.",
+    fix="Add .github/workflows/copilot-setup-steps.yml that installs the project's dependencies.",
+    effort="additive",
+)
+def check_copilot_setup_steps_present(index: ArtifactIndex):
+    if index.setup_steps is not None:
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="tooling.copilot-setup-steps.present", severity=Severity.INFO,
+        message="No .github/workflows/copilot-setup-steps.yml found; Copilot cloud agent must "
+                "discover and install dependencies itself.",
     )]
 
 

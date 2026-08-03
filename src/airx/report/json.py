@@ -121,6 +121,7 @@ def to_json_dict(index: ArtifactIndex, card: ScoreCard) -> dict:
             "copilot_instructions": str(_rel(index, index.copilot_instructions.path)) if index.copilot_instructions else None,
             "agents_md": [str(p) for p in index.agents_md_paths],
             "claude_md": str(index.claude_md_path) if index.claude_md_path else None,
+            "gemini_md": str(index.gemini_md_path) if index.gemini_md_path else None,
             "artifacts": artifacts,
             "repo_facts": repo_facts,
         },

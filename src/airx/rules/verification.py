@@ -397,3 +397,59 @@ def check_evidence_instructed(index: ArtifactIndex):
         message="The entry point never asks the agent to show command output as evidence "
                 "for its claims.",
     )]
+
+
+# =============================================================================
+# verify.hooks.enforces-lint (v0.3.0)
+# =============================================================================
+
+def _iter_strings(node) -> "list[str]":
+    """Every string leaf in a JSON-like structure, walked in a stable order."""
+    out: list[str] = []
+    if isinstance(node, str):
+        out.append(node)
+    elif isinstance(node, dict):
+        for key in sorted(node, key=str):
+            out.extend(_iter_strings(node[key]))
+    elif isinstance(node, list):
+        for item in node:
+            out.extend(_iter_strings(item))
+    return out
+
+
+@rule(
+    id="verify.hooks.enforces-lint", pillar=Pillar.VERIFICATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://www.humanlayer.dev/blog/writing-a-good-claude-md",
+    summary="At least one configured hook runs a lint/format command, instead of relying on "
+            "written instructions alone.",
+    why="Claude is not an expensive linter: a hook that runs the formatter and surfaces errors "
+        "enforces style mechanically, without spending agent turns or context on style review.",
+    fix="Add a PostToolUse or Stop hook (.github/hooks/*.json, or the `hooks` key in "
+        ".claude/settings.json) that runs the project's lint/format command.",
+    effort="additive",
+)
+def check_hooks_enforces_lint(index: ArtifactIndex):
+    settings = index.claude_settings
+    settings_hooks = (
+        settings.json_data.get("hooks")
+        if settings is not None and isinstance(settings.json_data, dict)
+        else None
+    )
+    if not index.hooks and not settings_hooks:
+        return None  # N/A: no hooks configured at all (verify.hooks.present covers that gap)
+    strings: list[str] = []
+    for artifact in index.hooks:
+        if isinstance(artifact.json_data, dict):
+            strings.extend(_iter_strings(artifact.json_data.get("hooks")))
+    if settings_hooks is not None:
+        strings.extend(_iter_strings(settings_hooks))
+    lowered = [s.lower() for s in strings]
+    if any(any(tok in s for tok in _LINT_TOKENS) for s in lowered):
+        return 1.0, []
+    return 0.0, [Diagnostic(
+        rule_id="verify.hooks.enforces-lint", severity=Severity.INFO,
+        message="Hooks are configured but none of them runs a lint/format command; style "
+                "review is left to the agent instead of being enforced mechanically.",
+    )]

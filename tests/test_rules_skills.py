@@ -235,3 +235,27 @@ def test_compat_claude_only_is_always_satisfied(tmp_path):
     sat, diags = rules.check_compat_claude_only(doc)
     assert sat == 1.0
     assert len(diags) == 1
+
+
+# --- v0.3.0 schema fix: current SKILL.md/command frontmatter fields ----------
+
+def test_unknown_fields_accepts_current_schema(tmp_path):
+    doc = _doc(
+        tmp_path, "reviewer",
+        "name: reviewer\ndescription: Reviews diffs when asked.\n"
+        "when_to_use: When a PR is open.\ndisallowed-tools: Bash\npaths: 'src/**'\n"
+        "effort: high\nbackground: false\nshell: bash\narguments: pr-number",
+    )
+    sat, diags = rules.check_unknown_fields(doc)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_unknown_fields_still_flags_real_typo(tmp_path):
+    doc = _doc(
+        tmp_path, "reviewer",
+        "name: reviewer\ndescription: Reviews diffs when asked.\nbogus-field: 1",
+    )
+    sat, diags = rules.check_unknown_fields(doc)
+    assert sat == 0.0
+    assert "bogus-field" in diags[0].message

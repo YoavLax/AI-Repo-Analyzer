@@ -94,16 +94,19 @@ class ArtifactKind(str, Enum):
     SKILL = "skill"
     ENTRYPOINT_COPILOT = "entrypoint_copilot"
     ENTRYPOINT_CLAUDE = "entrypoint_claude"
+    ENTRYPOINT_GEMINI = "entrypoint_gemini"
     AGENTS_MD = "agents_md"
     INSTRUCTIONS = "instructions"
     PROMPT = "prompt"
     AGENT = "agent"
+    COMMAND = "command"
     CLAUDE_RULE = "claude_rule"
     HOOKS = "hooks"
     MCP = "mcp"
     CLAUDE_SETTINGS = "claude_settings"
     CLAUDE_SETTINGS_LOCAL = "claude_settings_local"
     CLAUDE_LOCAL_MD = "claude_local_md"
+    SETUP_STEPS = "setup_steps"
 
 
 @dataclass(frozen=True)

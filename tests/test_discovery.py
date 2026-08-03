@@ -80,6 +80,58 @@ def test_root_claude_md_preferred_over_dot_claude(tmp_path: Path) -> None:
     assert "root" in index.claude_md.raw_text
 
 
+# --- v0.3.0 additions: GEMINI.md, .claude/commands/, copilot-setup-steps.yml -
+
+def test_gemini_md_is_classified_and_joins_entrypoint_docs(tmp_path: Path) -> None:
+    _write(tmp_path, "GEMINI.md", "# Gemini\n\nRules here.\n")
+    index = _index(tmp_path)
+    assert index.gemini_md is not None
+    assert index.gemini_md_path == PurePosixPath("GEMINI.md")
+    assert index.gemini_md in index.entrypoint_docs()
+    assert PurePosixPath("GEMINI.md") in index.entrypoint_paths()
+    gemini_artifacts = [a for a in index.artifacts if a.kind == ArtifactKind.ENTRYPOINT_GEMINI]
+    assert len(gemini_artifacts) == 1
+    assert gemini_artifacts[0].platform == Platform.COPILOT
+
+
+def test_no_gemini_md_leaves_field_none(tmp_path: Path) -> None:
+    _write(tmp_path, "README.md", "# hello\n")
+    index = _index(tmp_path)
+    assert index.gemini_md is None
+    assert index.gemini_md_path is None
+    assert index.entrypoint_docs() == ()
+
+
+def test_claude_commands_are_classified(tmp_path: Path) -> None:
+    _write(tmp_path, ".claude/commands/review.md", "---\ndescription: Reviews the diff.\n---\nBody.\n")
+    _write(tmp_path, ".claude/commands/nested/deploy.md", "---\ndescription: Deploys.\n---\nBody.\n")
+    index = _index(tmp_path)
+    assert [str(a.rel_path) for a in index.commands] == [
+        ".claude/commands/nested/deploy.md", ".claude/commands/review.md",
+    ]
+    assert all(a.platform == Platform.CLAUDE for a in index.commands)
+
+
+def test_no_commands_leaves_tuple_empty(tmp_path: Path) -> None:
+    _write(tmp_path, "README.md", "# hello\n")
+    index = _index(tmp_path)
+    assert index.commands == ()
+
+
+def test_copilot_setup_steps_is_classified(tmp_path: Path) -> None:
+    _write(tmp_path, ".github/workflows/copilot-setup-steps.yml", "name: setup\n")
+    index = _index(tmp_path)
+    assert index.setup_steps is not None
+    assert index.setup_steps.rel_path == PurePosixPath(".github/workflows/copilot-setup-steps.yml")
+    assert index.setup_steps.platform == Platform.COPILOT
+
+
+def test_no_copilot_setup_steps_leaves_field_none(tmp_path: Path) -> None:
+    _write(tmp_path, ".github/workflows/ci.yml", "name: ci\n")
+    index = _index(tmp_path)
+    assert index.setup_steps is None
+
+
 def test_skill_discovered_in_all_three_roots(tmp_path: Path) -> None:
     for root in (".github/skills", ".claude/skills", ".agents/skills"):
         _write(tmp_path, f"{root}/demo/SKILL.md", "---\nname: demo\ndescription: Does a demo when asked.\n---\nBody.\n")
