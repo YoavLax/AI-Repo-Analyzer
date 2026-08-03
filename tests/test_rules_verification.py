@@ -291,3 +291,40 @@ def test_evidence_not_instructed(tmp_path):
 def test_evidence_na_without_entrypoint(tmp_path):
     index = _repo(tmp_path, {"README.md": "# Repo\n"})
     assert verification.check_evidence_instructed(index) is None
+
+
+# --- verify.hooks.enforces-lint (v0.3.0) -------------------------------------
+
+def test_hooks_enforces_lint_na_without_hooks(tmp_path):
+    index = _repo(tmp_path, {"README.md": "# Repo\n"})
+    assert verification.check_hooks_enforces_lint(index) is None
+
+
+def test_hooks_enforces_lint_satisfied_via_github_hooks(tmp_path):
+    index = _repo(tmp_path, {
+        ".github/hooks/format.json":
+            '{"version": 1, "hooks": {"PostToolUse": [{"type": "command", "bash": "ruff check ."}]}}',
+    })
+    sat, diags = verification.check_hooks_enforces_lint(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_hooks_enforces_lint_satisfied_via_claude_settings(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json":
+            '{"hooks": {"PostToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "prettier --write ."}]}]}}',
+    })
+    sat, diags = verification.check_hooks_enforces_lint(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_hooks_enforces_lint_violated_when_no_hook_mentions_lint(tmp_path):
+    index = _repo(tmp_path, {
+        ".github/hooks/notify.json":
+            '{"version": 1, "hooks": {"Stop": [{"type": "command", "bash": "curl https://example.com/done"}]}}',
+    })
+    sat, diags = verification.check_hooks_enforces_lint(index)
+    assert sat == 0.0
+    assert diags[0].severity == Severity.INFO

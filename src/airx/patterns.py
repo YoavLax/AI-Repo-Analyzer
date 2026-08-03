@@ -56,6 +56,18 @@ def _is_agent_file(rel: PurePosixPath) -> bool:
     )
 
 
+def _is_command_file(rel: PurePosixPath) -> bool:
+    # `.claude/commands/**/*.md` — reusable Claude Code custom slash commands
+    # (claude-commands.md). No GitHub Copilot equivalent exists today; prompt
+    # files (`.github/prompts/**/*.prompt.md`) already cover that role.
+    return (
+        rel.suffix == ".md"
+        and len(rel.parts) >= 3
+        and rel.parts[0] == ".claude"
+        and rel.parts[1] == "commands"
+    )
+
+
 def _is_claude_rule(rel: PurePosixPath) -> bool:
     return (
         rel.suffix == ".md"
@@ -80,6 +92,11 @@ _MCP_PATHS = (
     PurePosixPath("mcp.json"),
 )
 
+_SETUP_STEPS_PATHS = (
+    PurePosixPath(".github/workflows/copilot-setup-steps.yml"),
+    PurePosixPath(".github/workflows/copilot-setup-steps.yaml"),
+)
+
 
 def _agent_platform(rel: PurePosixPath) -> Platform:
     return Platform.COPILOT if rel.parts[0] == ".github" else Platform.CLAUDE
@@ -98,6 +115,25 @@ DISCOVERY_PATTERNS: tuple[PatternSpec, ...] = (
         lambda rel: rel in (PurePosixPath("CLAUDE.md"), PurePosixPath(".claude/CLAUDE.md")),
     ),
     PatternSpec(
+        ArtifactKind.ENTRYPOINT_GEMINI,
+        # GitHub Copilot coding agent reads a root GEMINI.md in addition to
+        # .github/copilot-instructions.md, AGENTS.md and CLAUDE.md. The exact
+        # claim relied on, from GitHub's "add repository instructions" docs:
+        #
+        #   "Copilot coding agent [...] also supports AGENTS.md, CLAUDE.md and
+        #    GEMINI.md files."
+        #
+        # This is what makes `foundation.copilot.entrypoint` satisfiable by a
+        # GEMINI.md alone. If GitHub ever drops GEMINI.md from that list, this
+        # spec and that rule are what have to change — nothing else depends on
+        # the claim. This analyzer models only the Copilot/Claude platform axis,
+        # so GEMINI.md is an additional Copilot-visible entry point rather than
+        # a third platform.
+        # https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions
+        Platform.COPILOT,
+        lambda rel: rel == PurePosixPath("GEMINI.md"),
+    ),
+    PatternSpec(
         ArtifactKind.CLAUDE_LOCAL_MD,
         Platform.CLAUDE,
         lambda rel: rel == PurePosixPath("CLAUDE.local.md"),
@@ -106,6 +142,7 @@ DISCOVERY_PATTERNS: tuple[PatternSpec, ...] = (
     PatternSpec(ArtifactKind.INSTRUCTIONS, Platform.COPILOT, _is_instructions_file),
     PatternSpec(ArtifactKind.PROMPT, Platform.COPILOT, _is_prompt_file),
     PatternSpec(ArtifactKind.AGENT, Platform.NEUTRAL, _is_agent_file),  # platform refined below
+    PatternSpec(ArtifactKind.COMMAND, Platform.CLAUDE, _is_command_file),
     PatternSpec(ArtifactKind.CLAUDE_RULE, Platform.CLAUDE, _is_claude_rule),
     PatternSpec(ArtifactKind.HOOKS, Platform.COPILOT, _is_hooks_file),
     PatternSpec(ArtifactKind.MCP, Platform.NEUTRAL, lambda rel: rel in _MCP_PATHS),
@@ -119,6 +156,7 @@ DISCOVERY_PATTERNS: tuple[PatternSpec, ...] = (
         Platform.CLAUDE,
         lambda rel: rel == PurePosixPath(".claude/settings.local.json"),
     ),
+    PatternSpec(ArtifactKind.SETUP_STEPS, Platform.COPILOT, lambda rel: rel in _SETUP_STEPS_PATHS),
 )
 
 

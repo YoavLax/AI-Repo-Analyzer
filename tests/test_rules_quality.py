@@ -373,3 +373,76 @@ def test_repo_quality_rich_scores_well_across_all_rules():
     assert quality.check_emphasis_calibrated(index) == (1.0, [])
     assert quality.check_no_stale_markers(index) == (1.0, [])
     assert quality.check_links_resolve(index) is None  # no relative links
+
+
+# --- quality.entrypoint.no-lint-rules (v0.3.0) -------------------------------
+
+def test_no_lint_rules_satisfied_without_style_phrases(tmp_path):
+    index = _entry(tmp_path, "# Guidelines\n\n- Run `pytest -q` before pushing\n")
+    sat, diags = quality.check_entrypoint_no_lint_rules(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_no_lint_rules_flags_multiple_style_phrases(tmp_path):
+    index = _entry(
+        tmp_path,
+        "# Style\n\n- Use single quotes everywhere\n- Use 2 space indent\n"
+        "- No trailing whitespace\n",
+    )
+    sat, diags = quality.check_entrypoint_no_lint_rules(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert rel == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.INFO
+    assert "single quotes" in diag.message  # plain phrase, not a regex-escaped source
+
+
+def test_no_lint_rules_ignores_phrases_inside_code_fences(tmp_path):
+    index = _entry(
+        tmp_path,
+        "# Style\n\n```json\n"
+        '{"note": "single quotes, 2 space indent, trailing comma"}\n'
+        "```\n",
+    )
+    sat, diags = quality.check_entrypoint_no_lint_rules(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_no_lint_rules_single_mention_passes(tmp_path):
+    index = _entry(tmp_path, "# Style\n\n- Use single quotes for strings\n")
+    sat, diags = quality.check_entrypoint_no_lint_rules(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_no_lint_rules_not_applicable_without_docs(tmp_path):
+    _write(tmp_path, "src/app.py", "print('hi')\n")
+    assert quality.check_entrypoint_no_lint_rules(_index(tmp_path)) is None
+
+
+# --- quality.references.pointers-not-snippets (v0.3.0) -----------------------
+
+def test_pointers_not_snippets_satisfied_with_small_reference(tmp_path):
+    _write(tmp_path, "docs/testing.md", "# Testing\n\n```python\nassert True\n```\n")
+    index = _entry(tmp_path, "# G\n\nSee [testing](docs/testing.md) for conventions.\n")
+    sat, diags = quality.check_references_pointers_not_snippets(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_pointers_not_snippets_flags_oversized_code_block(tmp_path):
+    big_block = "\n".join(f"line {i}" for i in range(60))
+    _write(tmp_path, "docs/testing.md", f"# Testing\n\n```python\n{big_block}\n```\n")
+    index = _entry(tmp_path, "# G\n\nSee [testing](docs/testing.md) for conventions.\n")
+    sat, diags = quality.check_references_pointers_not_snippets(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert rel == PurePosixPath("docs/testing.md")
+    assert diag.severity == Severity.INFO
+
+
+def test_pointers_not_snippets_not_applicable_without_markdown_references(tmp_path):
+    index = _entry(tmp_path, "# G\n\nNo links here.\n")
+    assert quality.check_references_pointers_not_snippets(index) is None

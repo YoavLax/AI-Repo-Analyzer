@@ -24,6 +24,7 @@ from airx.model import (
     Severity,
 )
 from airx.rules.registry import RuleScope, rule
+from airx import markdown as md
 from airx import config
 
 _HEADING_RE = re.compile(r"^#{1,3}\s", re.MULTILINE)
@@ -53,11 +54,12 @@ _IMPORT_RE = re.compile(r"(?m)(?:^|\s)@([A-Za-z0-9_][A-Za-z0-9_./-]*)")
 _ENTRYPOINT_KINDS = frozenset({
     ArtifactKind.ENTRYPOINT_COPILOT,
     ArtifactKind.ENTRYPOINT_CLAUDE,
+    ArtifactKind.ENTRYPOINT_GEMINI,
 })
 
 
 def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
-    return [d for d in (index.copilot_instructions, index.claude_md) if d is not None]
+    return list(index.entrypoint_docs())
 
 
 @rule(
@@ -65,7 +67,7 @@ def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
     applicability=Applicability.PRESENCE, weight=10, severity=Severity.ERROR,
     source=RuleSource.ADVISORY,
     doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
-    summary="At least one always-on entry point exists (copilot-instructions.md, AGENTS.md, or CLAUDE.md).",
+    summary="At least one always-on entry point exists (copilot-instructions.md, AGENTS.md, CLAUDE.md, or GEMINI.md).",
     why="Without an always-on entry point, AI assistants start every task with zero repository context.",
     fix="Create a .github/copilot-instructions.md, AGENTS.md, or CLAUDE.md describing the project.",
     fix_by_platform=(
@@ -76,12 +78,15 @@ def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
     effort="additive",
 )
 def check_entrypoint_present(index: ArtifactIndex):
-    has_any = bool(index.copilot_instructions or index.agents_md_paths or index.claude_md)
+    has_any = bool(
+        index.copilot_instructions or index.agents_md_paths or index.claude_md or index.gemini_md
+    )
     if has_any:
         return 1.0, []
     return 0.0, [Diagnostic(
         rule_id="foundation.entrypoint.present", severity=Severity.ERROR,
-        message="No always-on AI entry point found (.github/copilot-instructions.md, AGENTS.md, or CLAUDE.md).",
+        message="No always-on AI entry point found (.github/copilot-instructions.md, AGENTS.md, "
+                "CLAUDE.md, or GEMINI.md).",
     )]
 
 
@@ -89,19 +94,20 @@ def check_entrypoint_present(index: ArtifactIndex):
     id="foundation.copilot.entrypoint", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
     applicability=Applicability.PRESENCE, weight=4, severity=Severity.WARNING,
     source=RuleSource.SPEC,
-    doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
-    summary="GitHub Copilot has an entry point (.github/copilot-instructions.md or AGENTS.md).",
+    doc_url="https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions",
+    summary="GitHub Copilot has an entry point (.github/copilot-instructions.md, AGENTS.md, or GEMINI.md).",
     platforms=(Platform.COPILOT,),
-    why="GitHub Copilot only auto-loads .github/copilot-instructions.md or AGENTS.md.",
+    why="GitHub Copilot cloud agent auto-loads .github/copilot-instructions.md, AGENTS.md, CLAUDE.md, or GEMINI.md.",
     fix="Add a .github/copilot-instructions.md (or a root AGENTS.md) with project instructions.",
     effort="additive",
     implies=("foundation.entrypoint.present",),
 )
 def check_copilot_entrypoint(index: ArtifactIndex):
-    if index.copilot_instructions or index.agents_md_paths:
+    if index.copilot_instructions or index.agents_md_paths or index.gemini_md:
         return 1.0, []
     return 0.0, [Diagnostic(rule_id="foundation.copilot.entrypoint", severity=Severity.WARNING,
-                             message="No Copilot-visible entry point (.github/copilot-instructions.md or AGENTS.md).")]
+                             message="No Copilot-visible entry point (.github/copilot-instructions.md, "
+                                     "AGENTS.md, or GEMINI.md).")]
 
 
 @rule(
@@ -334,3 +340,59 @@ def check_entrypoint_parses(index: ArtifactIndex):
     if diags:
         return 0.0, diags
     return 1.0, []
+
+
+# =============================================================================
+# foundation.entrypoint.conditional-references (v0.3.0)
+# =============================================================================
+
+@rule(
+    id="foundation.entrypoint.conditional-references", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://www.humanlayer.dev/blog/writing-a-good-claude-md",
+    summary="References to companion instruction docs use a load condition (when/if) "
+            "rather than unconditionally inlining all detail.",
+    why="Progressive disclosure applies to the entry point too: a reference with no load "
+        "condition gets read eagerly every session or never, instead of only when relevant.",
+    fix="Introduce each companion-doc reference with a condition, e.g. "
+        "'Read docs/testing.md when writing new tests.'.",
+    effort="authoring",
+)
+def check_entrypoint_conditional_references(index: ArtifactIndex):
+    docs = _entrypoints(index)
+    if not docs:
+        return None
+    paths = index.entrypoint_paths()
+    total_refs = 0
+    # Scored per entry point and averaged, like every other multi-document rule
+    # here: a repo-wide "any entry point got it right" flag would let one
+    # well-written CLAUDE.md hide the same problem in GEMINI.md and
+    # copilot-instructions.md, and would discard their diagnostics.
+    sats: list[float] = []
+    diags: list[tuple] = []
+    for doc, path in zip(docs, paths):
+        refs = md.extract_references(doc.body)
+        if not refs:
+            continue
+        total_refs += len(refs)
+        lines = doc.body.splitlines()
+        conditional = False
+        for i, line in enumerate(lines):
+            if not any(ref in line for ref in refs):
+                continue
+            window = lines[max(0, i - 1): i + 2]
+            if any(md.LOAD_TRIGGER_RE.search(neighbor) for neighbor in window):
+                conditional = True
+                break
+        sats.append(1.0 if conditional else 0.0)
+        if not conditional:
+            diags.append((path, Diagnostic(
+                rule_id="foundation.entrypoint.conditional-references", severity=Severity.INFO,
+                message=f"{doc.path.name} references {len(refs)} companion doc(s) but none is "
+                        f"introduced with a load condition; tell the agent when to read each "
+                        f"one (e.g. 'Read X when ...').",
+            )))
+    if total_refs < config.MIN_REFERENCES_FOR_CONDITIONAL_CHECK or not sats:
+        return None  # N/A: nothing to gate
+    return sum(sats) / len(sats), diags

@@ -269,6 +269,23 @@ def test_unknown_fields_na_without_agents(tmp_path):
     assert rules.check_agents_unknown_fields(index) is None
 
 
+# --- v0.3.0 schema fix: current Claude subagent frontmatter fields -----------
+
+def test_unknown_fields_accepts_current_claude_subagent_schema(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/agents/researcher.md": (
+            "---\nname: researcher\ndescription: Researches library docs when asked.\n"
+            "tools: Read, Grep\ndisallowedTools: Bash\npermissionMode: plan\nmaxTurns: 10\n"
+            "skills: [deploy]\nmcpServers: [context7]\nhooks: {}\nmemory: project\n"
+            "background: false\neffort: high\nisolation: worktree\ninitialPrompt: Begin.\n"
+            "---\n\nBody.\n"
+        ),
+    })
+    sat, diags = rules.check_agents_unknown_fields(index)
+    assert sat == 1.0
+    assert diags == []
+
+
 # =============================================================================
 # agents.sizing
 # =============================================================================
@@ -355,3 +372,112 @@ def test_prompt_frontmatter_flags_unknown_field(tmp_path):
 def test_prompt_frontmatter_na_without_prompts(tmp_path):
     index = _index(tmp_path, {"README.md": "# Hello\n"})
     assert rules.check_prompts_frontmatter_valid(index) is None
+
+
+# =============================================================================
+# agents.commands.present / agents.commands.frontmatter.valid (v0.3.0)
+# =============================================================================
+
+def test_commands_present_satisfied(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/commands/review.md": "---\ndescription: Reviews the diff.\n---\n\nReview it.\n",
+    })
+    sat, diags = rules.check_commands_present(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_commands_present_violated_when_none(tmp_path):
+    index = _index(tmp_path, {"README.md": "# Hello\n"})
+    sat, diags = rules.check_commands_present(index)
+    assert sat == 0.0
+    assert diags[0].severity == Severity.INFO
+
+
+def test_commands_frontmatter_valid_accepts_current_schema(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/commands/review.md": (
+            "---\ndescription: Reviews the diff.\nwhen_to_use: When a PR is open.\n"
+            "argument-hint: '[pr-number]'\ndisallowed-tools: Bash\neffort: high\n"
+            "context: fork\nbackground: false\n---\n\nReview it.\n"
+        ),
+    })
+    sat, diags = rules.check_commands_frontmatter_valid(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_commands_frontmatter_valid_flags_unknown_field(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/commands/odd.md": "---\ndescription: Does a thing.\nbogus-field: 1\n---\n\nBody.\n",
+    })
+    sat, diags = rules.check_commands_frontmatter_valid(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert rel == PurePosixPath(".claude/commands/odd.md")
+    assert "bogus-field" in diag.message
+
+
+def test_commands_frontmatter_valid_flags_dangling_agent(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/commands/odd.md": "---\ndescription: Does a thing.\nagent: ghost-agent\n---\n\nBody.\n",
+    })
+    sat, diags = rules.check_commands_frontmatter_valid(index)
+    assert sat == 0.0
+    assert "ghost-agent" in diags[0][1].message
+
+
+def test_commands_frontmatter_valid_na_without_commands(tmp_path):
+    index = _index(tmp_path, {"README.md": "# Hello\n"})
+    assert rules.check_commands_frontmatter_valid(index) is None
+
+
+# =============================================================================
+# agents.mcp-servers.resolve (v0.3.0)
+# =============================================================================
+
+def test_mcp_servers_resolve_satisfied(tmp_path):
+    index = _index(tmp_path, {
+        ".mcp.json": '{"mcpServers": {"context7": {"command": "npx"}}}',
+        ".claude/agents/researcher.md": (
+            "---\nname: researcher\ndescription: Researches library docs when asked.\n"
+            "mcpServers: [context7]\n---\n\nBody.\n"
+        ),
+    })
+    sat, diags = rules.check_agents_mcp_servers_resolve(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_mcp_servers_resolve_flags_unknown_server(tmp_path):
+    index = _index(tmp_path, {
+        ".mcp.json": '{"mcpServers": {"context7": {"command": "npx"}}}',
+        ".claude/agents/researcher.md": (
+            "---\nname: researcher\ndescription: Researches library docs when asked.\n"
+            "mcpServers: [ghost-server]\n---\n\nBody.\n"
+        ),
+    })
+    sat, diags = rules.check_agents_mcp_servers_resolve(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert rel == PurePosixPath(".claude/agents/researcher.md")
+    assert "ghost-server" in diag.message
+
+
+def test_mcp_servers_resolve_flags_unknown_server_without_any_mcp_config(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/agents/researcher.md": (
+            "---\nname: researcher\ndescription: Researches library docs when asked.\n"
+            "mcp-servers: context7\n---\n\nBody.\n"
+        ),
+    })
+    sat, diags = rules.check_agents_mcp_servers_resolve(index)
+    assert sat == 0.0
+    assert "context7" in diags[0][1].message
+
+
+def test_mcp_servers_resolve_na_without_field(tmp_path):
+    index = _index(tmp_path, {
+        ".claude/agents/planner.md": GOOD_AGENT,
+    })
+    assert rules.check_agents_mcp_servers_resolve(index) is None

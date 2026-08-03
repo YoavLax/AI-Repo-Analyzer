@@ -172,6 +172,47 @@ def check_permissions_no_bypass(index: ArtifactIndex):
 
 
 @rule(
+    id="safety.permissions.least-privilege", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=4, severity=Severity.WARNING,
+    source=RuleSource.ADVISORY,
+    doc_url="https://code.claude.com/docs/en/iam#tool-specific-permission-rules",
+    summary="Committed .claude/settings.json permissions.allow grants no unrestricted "
+            "wildcard tool access (bare Bash, Bash(*), or '*').",
+    platforms=_CLAUDE_ONLY,
+    why="An unrestricted Bash grant auto-approves every shell command for every contributor's "
+        "agent runs — the 'security bypass' anti-pattern, one step short of --dangerously-skip-permissions.",
+    fix="Replace the blanket entry with scoped patterns, e.g. 'Bash(git *)', 'Bash(npm run *)', "
+        "and move destructive commands to `ask` or `deny`.",
+    effort="mechanical",
+)
+def check_permissions_least_privilege(index: ArtifactIndex):
+    settings = index.claude_settings
+    if settings is None or not isinstance(settings.json_data, dict):
+        return None
+    permissions = settings.json_data.get("permissions")
+    if not isinstance(permissions, dict):
+        return None  # N/A: no permissions block to scan
+    allow = permissions.get("allow")
+    if not isinstance(allow, list):
+        return None  # N/A: no allow rules declared
+    hits = sorted(
+        str(entry) for entry in allow
+        if isinstance(entry, str) and entry in config.UNRESTRICTED_PERMISSION_VALUES
+    )
+    if not hits:
+        return 1.0, []
+    diags = [
+        Diagnostic(
+            rule_id="safety.permissions.least-privilege", severity=Severity.WARNING,
+            message=f"permissions.allow grants unrestricted access via '{entry}'; "
+                    f"scope it to specific commands instead.",
+        )
+        for entry in hits
+    ]
+    return 0.0, [(settings.rel_path, d) for d in diags]
+
+
+@rule(
     id="safety.settings.valid", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
     applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.SPEC,

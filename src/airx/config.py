@@ -42,6 +42,11 @@ KNOWN_FRONTMATTER_FIELDS: frozenset[str] = frozenset({
     "model", "context", "agent", "hooks", "user-invocable",
     "disable-model-invocation", "skills", "mode", "license", "compatibility",
     "metadata", "argument-hint",
+    # Added after the 2026-08 Claude Code skills/commands best-practice research
+    # pass (claude-skills.md / claude-commands.md): current, legitimate
+    # frontmatter fields this schema previously flagged as unknown.
+    "when_to_use", "disallowed-tools", "paths", "effort", "background", "shell",
+    "arguments",
 })
 
 COMPAT_MATRIX: dict[str, dict[str, str]] = {
@@ -159,6 +164,31 @@ MONOLITH_LINES: int = 250
 KNOWN_AGENT_FIELDS: frozenset[str] = frozenset({
     "name", "description", "tools", "model", "target", "argument-hint",
     "color", "temperature", "mode", "handoffs", "mcp-servers",
+    # Added after the 2026-08 claude-subagents.md research pass: current,
+    # legitimate Claude Code subagent frontmatter fields (16-field schema).
+    "disallowedTools", "permissionMode", "maxTurns", "skills", "mcpServers",
+    "hooks", "memory", "background", "effort", "isolation", "initialPrompt",
+})
+
+#: Frontmatter fields legitimate on `.claude/commands/**/*.md` (claude-commands.md).
+#:
+#: Deliberately NOT aliased to KNOWN_FRONTMATTER_FIELDS. A command is neither a
+#: skill package nor a path-scoped instructions file, so inheriting that whole
+#: schema let `license`, `version`, `author`, `tags`, `metadata`, `paths`,
+#: `mode` and `compatibility` pass silently — with nothing left for the
+#: unknown-field half of `agents.commands.frontmatter.valid` to catch.
+#:
+#: Contents: the invocation/dispatch schema (documented command fields, plus the
+#: fields observed across a 65-file survey of real `.claude/commands` trees:
+#: `description`, `allowed-tools`, `argument-hint`, `disable-model-invocation`,
+#: `hide-from-slash-command-tool`). Skill-package metadata and instructions-only
+#: path scoping are excluded.
+KNOWN_COMMAND_FIELDS: frozenset[str] = frozenset({
+    "name", "description", "when_to_use",
+    "model", "agent", "context", "effort", "background",
+    "allowed-tools", "disallowed-tools", "skills", "hooks", "shell",
+    "argument-hint", "arguments",
+    "disable-model-invocation", "hide-from-slash-command-tool", "user-invocable",
 })
 KNOWN_PROMPT_FIELDS: frozenset[str] = frozenset({
     "name", "description", "mode", "model", "tools", "agent", "argument-hint",
@@ -175,6 +205,41 @@ KNOWN_CLAUDE_SETTINGS_KEYS: frozenset[str] = frozenset({
     "awsAuthRefresh", "awsCredentialExport", "outputStyle", "sandbox",
     "alwaysThinkingEnabled", "companyAnnouncements", "spinnerTipsEnabled",
     "$schema", "extraKnownMarketplaces", "plugins",
+    # Added after the 2026-08 claude-settings.md research pass: settings.json
+    # now documents 80+ top-level keys; these are the additional ones actually
+    # documented (not internal/unverified), to cut false positives in
+    # safety.settings.valid.
+    "agent", "language", "claudeMdExcludes", "claudeMd", "autoUpdatesChannel",
+    "minimumVersion", "thinkingBudgetTokens", "skipWebFetchPreflight",
+    "availableModels", "enforceAvailableModels", "fastMode", "fastModePerSessionOptIn",
+    "defaultShell", "includeGitInstructions", "voice", "voiceEnabled",
+    "disableSkillShellExecution", "skillListingMaxDescChars", "skillListingBudgetFraction",
+    "wslInheritsWindowsSettings", "tui", "awaySummaryEnabled", "autoCompactEnabled",
+    "skillOverrides", "disableRemoteControl", "agentPushNotifEnabled",
+    "inputNeededNotifEnabled", "remoteControlAtStartup", "disableAgentView",
+    "disableWorkflows", "workflowKeywordTriggerEnabled", "ultracode",
+    "dynamicWorkflowSize", "workflowSizeGuideline", "disableBundledSkills",
+    "disableArtifact", "enableArtifact", "feedbackSurveyRate", "advisorModel",
+    "respondToBashCommands", "askUserQuestionTimeout", "theme", "verbose",
+    "switchModelsOnFlag", "processWrapper", "plansDirectory", "autoMemoryDirectory",
+    "autoMemoryEnabled", "fileCheckpointingEnabled", "worktree", "attribution",
+    "prUrlTemplate", "gcpAuthRefresh", "forceLoginOrgUUID",
+    "forceLoginGatewayUrl", "allowedMcpServers", "deniedMcpServers",
+    "allowManagedMcpServersOnly", "channelsEnabled", "allowedChannelPlugins",
+    "allowAllClaudeAiMcps", "disableClaudeAiConnectors", "effortLevel",
+    "fallbackModel", "modelOverrides", "teammateMode", "preferredNotifChannel",
+    "terminalProgressBarEnabled", "footerLinksRegexes", "emojiCompletionEnabled",
+    "autoConnectIde", "autoInstallIdeExtension", "externalEditorContext",
+    "teammateDefaultModel", "sshConfigs", "respectGitignore", "prefersReducedMotion",
+    "axScreenReader", "syntaxHighlightingDisabled", "fileSuggestion",
+    "autoScrollEnabled", "editorMode", "vimInsertModeRemaps", "showTurnDuration",
+    "viewMode", "showClearContextOnPlanAccept", "disableDeepLinkRegistration",
+    "showThinkingSummaries", "spinnerVerbs", "spinnerTipsOverride",
+    "strictKnownMarketplaces", "strictPluginOnlyCustomization",
+    "pluginSuggestionMarketplaces", "skippedMarketplaces", "skippedPlugins",
+    "pluginConfigs", "blockedMarketplaces", "pluginTrustMessage",
+    "disableSideloadFlags", "enabledPlugins", "allowManagedPermissionRulesOnly",
+    "disableAutoMode", "useAutoModeDuringPlan", "autoMode",
 })
 
 LOCAL_FILE_GITIGNORE_ENTRIES: tuple[str, ...] = (
@@ -186,3 +251,41 @@ LOCAL_FILE_GITIGNORE_ENTRIES: tuple[str, ...] = (
 
 DISCLOSURE_BODY_LINES: int = 300
 MIN_DESCRIPTION_CONTENT_WORDS: int = 15
+
+# --- v0.3.0: new rules added from the 2026-08 best-practice research pass ----
+# (shanraisshan/claude-code-best-practice, humanlayer.dev, SFEIR Institute,
+# GitHub Copilot docs, agentskills.io)
+
+#: `tooling.mcp.not-overloaded` — soft ceiling on the number of MCP servers
+#: declared across all MCP config files before real-world usage reports
+#: confusion / context bloat (claude-mcp.md, cites r/mcp: "15 MCP servers...
+#: ended up using only 4 daily").
+MCP_SERVER_SOFT_CEILING: int = 10
+
+#: `safety.permissions.least-privilege` — permission rule shapes in
+#: `.claude/settings.json` `permissions.allow` that grant unrestricted shell
+#: execution (claude-settings.md: `Bash(*)` is equivalent to bare `Bash`; a
+#: literal `"*"` matches every tool). Deliberately excludes bare `Edit`/`Read`/
+#: `Write` — SFEIR Institute's own recommended example uses `["Edit", "Read",
+#: "Bash(git*)"]`, so file-edit access without a path scope is not itself the
+#: "security bypass" anti-pattern; unrestricted shell execution is.
+UNRESTRICTED_PERMISSION_VALUES: frozenset[str] = frozenset({
+    "*", "Bash", "Bash(*)",
+})
+
+#: `quality.entrypoint.no-lint-rules` — literal code-style/formatting phrases
+#: that duplicate what a linter/formatter config should own instead of prose
+#: in the entry point (humanlayer.dev: "Claude is not an expensive linter").
+#: Kept short and literal (not e.g. bare "indent") to avoid false positives on
+#: unrelated prose.
+STYLE_GUIDE_PHRASES: tuple[str, ...] = (
+    "space indent", "spaces for indent", "tabs for indent", "single quotes",
+    "double quotes", "trailing whitespace", "trailing comma", "sort imports",
+    "sorted imports", "line length", "always use semicolons", "no semicolons",
+)
+STYLE_GUIDE_MIN_MATCHES: int = 2
+
+#: `foundation.entrypoint.conditional-references` — an entry point is exempt
+#: below this many companion-doc references (nothing to gate).
+MIN_REFERENCES_FOR_CONDITIONAL_CHECK: int = 1
+

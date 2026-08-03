@@ -220,3 +220,68 @@ def test_foundation_metadata_backfill():
     ):
         meta = get_rule(meta_id)
         assert meta.why and meta.fix and meta.effort
+
+
+# --- v0.3.0: GEMINI.md recognized as a Copilot-visible entry point -----------
+
+def test_entrypoint_present_satisfied_by_gemini_md_alone(tmp_path):
+    root = _repo(tmp_path, {"GEMINI.md": "# Gemini\n\nRules.\n"})
+    sat, diags = foundation.check_entrypoint_present(_index(root))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_copilot_entrypoint_satisfied_by_gemini_md_alone(tmp_path):
+    root = _repo(tmp_path, {"GEMINI.md": "# Gemini\n\nRules.\n"})
+    sat, diags = foundation.check_copilot_entrypoint(_index(root))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_copilot_entrypoint_violated_without_any_entrypoint(tmp_path):
+    root = _repo(tmp_path, {"README.md": "# hi\n"})
+    sat, diags = foundation.check_copilot_entrypoint(_index(root))
+    assert sat == 0.0
+    assert "GEMINI.md" in diags[0].message
+
+
+def test_gemini_md_participates_in_length_and_structure_checks(tmp_path):
+    root = _repo(tmp_path, {"GEMINI.md": "no headings at all, just prose\n"})
+    sat, diags = foundation.check_entrypoint_structured(_index(root))
+    assert sat == 0.0
+    assert diags[0][0] == PurePosixPath("GEMINI.md")
+
+
+# --- foundation.entrypoint.conditional-references ----------------------------
+
+def test_conditional_references_satisfied_with_load_trigger(tmp_path):
+    root = _repo(tmp_path, {
+        "CLAUDE.md": "# Overview\n\nRead [docs/testing.md](docs/testing.md) when writing new tests.\n",
+        "docs/testing.md": "# Testing\n",
+    })
+    sat, diags = foundation.check_entrypoint_conditional_references(_index(root))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_conditional_references_violated_without_load_trigger(tmp_path):
+    root = _repo(tmp_path, {
+        "CLAUDE.md": "# Overview\n\nSee [docs/testing.md](docs/testing.md) for details.\n",
+        "docs/testing.md": "# Testing\n",
+    })
+    sat, diags = foundation.check_entrypoint_conditional_references(_index(root))
+    assert sat == 0.0
+    assert len(diags) == 1
+    path, diag = diags[0]
+    assert path == PurePosixPath("CLAUDE.md")
+    assert diag.severity == Severity.INFO
+
+
+def test_conditional_references_not_applicable_without_references(tmp_path):
+    root = _repo(tmp_path, {"CLAUDE.md": "# Overview\n\nNo links here.\n"})
+    assert foundation.check_entrypoint_conditional_references(_index(root)) is None
+
+
+def test_conditional_references_not_applicable_without_entrypoint(tmp_path):
+    root = _repo(tmp_path, {"README.md": "# hi\n"})
+    assert foundation.check_entrypoint_conditional_references(_index(root)) is None

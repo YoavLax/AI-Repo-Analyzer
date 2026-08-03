@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from airx import config
+from airx import markdown as md
 from airx.discovery import ArtifactIndex
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
 from airx.rules.registry import RuleScope, rule
@@ -61,9 +62,19 @@ _STALE_RES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     for marker in config.STALE_MARKERS
 )
 
-# Same link shape as airx.rules.skills: relative Markdown links only —
-# http(s)/mailto URLs and pure `#anchor` links never match.
-_MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
+# Relative Markdown links only — http(s)/mailto URLs, absolute paths and pure
+# `#anchor` links never match. Imported from airx.markdown rather than
+# re-compiled here because airx.ingest resolves the very same links to decide
+# what a clone-free snapshot must fetch; if the two shapes drifted, the web
+# report would diverge from the CLI's (D3).
+_MD_LINK_RE = md.MD_LINK_RE
+_CODE_BLOCK_RE = md.CODE_BLOCK_RE
+
+# quality.entrypoint.no-lint-rules: literal code-style phrases (config.STYLE_GUIDE_PHRASES),
+# compiled once, case-insensitive.
+_STYLE_GUIDE_RES: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(re.escape(phrase), re.IGNORECASE) for phrase in config.STYLE_GUIDE_PHRASES
+)
 
 _DOC_URL_WRITING = (
     "https://github.blog/ai-and-ml/github-copilot/"
@@ -429,9 +440,11 @@ def check_links_resolve(index: ArtifactIndex):
     diags: list[tuple[PurePosixPath, Diagnostic]] = []
     for rel, doc in _quality_docs(index):
         refs: list[str] = []
-        for ref in _MD_LINK_RE.findall(doc.body):
-            # Root-absolute links are not relative links; skip them.
-            if not ref.startswith("/") and ref not in refs:
+        # Fenced blocks hold illustrative examples, not live links (see
+        # airx.markdown.strip_code_blocks) — a sample `[x](docs/EXAMPLE.md)`
+        # inside a ```markdown fence is not a broken reference.
+        for ref in _MD_LINK_RE.findall(md.strip_code_blocks(doc.body)):
+            if ref not in refs:
                 refs.append(ref)
         if not refs:
             continue
@@ -461,6 +474,104 @@ def check_links_resolve(index: ArtifactIndex):
                 ))
         sats.append(1.0 if not file_diags else 0.0)
         diags.extend((rel, d) for d in file_diags)
+    if not sats:
+        return None
+    return sum(sats) / len(sats), diags
+
+
+# =============================================================================
+# quality.entrypoint.no-lint-rules (v0.3.0)
+# =============================================================================
+
+@rule(
+    id="quality.entrypoint.no-lint-rules", pillar=Pillar.QUALITY, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=2, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://www.humanlayer.dev/blog/writing-a-good-claude-md",
+    summary="Instructions avoid embedding generic code-style/formatting micro-rules that "
+            "duplicate a linter or formatter config.",
+    why="An LLM is a slow, expensive substitute for a linter; style micro-rules in prose "
+        "eat context and instruction-following budget that a deterministic tool enforces for free.",
+    fix="Move style rules (indentation, quote style, import order, ...) into a linter/formatter "
+        "config and, if needed, a hook that runs it automatically.",
+    effort="authoring",
+)
+def check_entrypoint_no_lint_rules(index: ArtifactIndex):
+    docs = _quality_docs(index)
+    if not docs:
+        return None
+    sats: list[float] = []
+    diags: list[tuple[PurePosixPath, Diagnostic]] = []
+    for rel, doc in docs:
+        prose = "\n".join(_strip_fences(doc.body)[0])
+        matches = sorted({
+            phrase for phrase, pattern in zip(config.STYLE_GUIDE_PHRASES, _STYLE_GUIDE_RES)
+            if pattern.search(prose)
+        })
+        if len(matches) >= config.STYLE_GUIDE_MIN_MATCHES:
+            sats.append(0.0)
+            diags.append((rel, Diagnostic(
+                rule_id="quality.entrypoint.no-lint-rules", severity=Severity.INFO,
+                message=f"{len(matches)} code-style micro-rules found in prose "
+                        f"(e.g. {', '.join(sorted(matches)[:3])}); enforce these with a "
+                        f"linter/formatter config instead.",
+            )))
+        else:
+            sats.append(1.0)
+    return sum(sats) / len(sats), diags
+
+
+# =============================================================================
+# quality.references.pointers-not-snippets (v0.3.0)
+# =============================================================================
+
+def _fenced_block_line_counts(body: str) -> list[int]:
+    return [len(match.splitlines()) for match in _CODE_BLOCK_RE.findall(body)]
+
+
+@rule(
+    id="quality.references.pointers-not-snippets", pillar=Pillar.QUALITY, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://www.humanlayer.dev/blog/writing-a-good-claude-md",
+    summary=f"Companion docs referenced from the entry point or instructions files avoid "
+            f"embedding code blocks over {config.BLOAT_CODE_BLOCK_LINES} lines.",
+    why="A referenced doc that copies large code blocks goes stale the moment the real code "
+        "changes; a file:line pointer to the source never can.",
+    fix="Replace the large embedded code block with a file:line pointer to the authoritative source.",
+    effort="authoring",
+)
+def check_references_pointers_not_snippets(index: ArtifactIndex):
+    tree_files = {str(f) for f in index.tree.files} if index.tree is not None else set()
+    if not tree_files:
+        return None
+    seen_targets: set[str] = set()
+    sats: list[float] = []
+    diags: list[tuple[PurePosixPath, Diagnostic]] = []
+    for rel, doc in _quality_docs(index):
+        # The exact resolver airx.ingest uses to decide what a clone-free
+        # snapshot must fetch — same function, so the set of docs read here can
+        # never exceed the set of docs materialized there (D3).
+        for resolved in md.referenced_markdown(doc.body, rel):
+            target = resolved.as_posix()
+            if target not in tree_files or target in seen_targets:
+                continue
+            seen_targets.add(target)
+            try:
+                text = (index.root / target).read_text(encoding="utf-8-sig")
+            except (OSError, UnicodeDecodeError):
+                continue
+            oversized = [n for n in _fenced_block_line_counts(text) if n > config.BLOAT_CODE_BLOCK_LINES]
+            if oversized:
+                sats.append(0.0)
+                diags.append((PurePosixPath(target), Diagnostic(
+                    rule_id="quality.references.pointers-not-snippets", severity=Severity.INFO,
+                    message=f"Referenced doc has a {max(oversized)}-line embedded code block "
+                            f"(over {config.BLOAT_CODE_BLOCK_LINES}); point at the source with "
+                            f"a file:line reference instead of copying it.",
+                )))
+            else:
+                sats.append(1.0)
     if not sats:
         return None
     return sum(sats) / len(sats), diags

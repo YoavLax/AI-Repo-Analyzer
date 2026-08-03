@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from airx.fs import DEFAULT_EXCLUDED_DIRS, DEFAULT_MAX_FILES, RepoTree
+from airx.markdown import referenced_markdown
 from airx.patterns import classify
 
 API_HOST = "https://api.github.com"
@@ -251,6 +252,29 @@ def select_paths(files: tuple[PurePosixPath, ...]) -> tuple[PurePosixPath, ...]:
     return tuple(sorted(selected, key=lambda p: p.as_posix()))
 
 
+def _referenced_docs(
+    workdir: Path,
+    fetched: tuple[PurePosixPath, ...],
+    candidates: set[PurePosixPath],
+) -> tuple[PurePosixPath, ...]:
+    """Markdown docs linked from the already-materialized Markdown artifacts,
+    restricted to paths present in the listing.
+
+    Sorted, and a pure function of the materialized bytes, so the fetch set
+    stays deterministic (D1).
+    """
+    found: set[PurePosixPath] = set()
+    for rel in fetched:
+        if rel.suffix.lower() != ".md":
+            continue
+        try:
+            text = (workdir / str(rel)).read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError):
+            continue
+        found.update(t for t in referenced_markdown(text, rel) if t in candidates)
+    return tuple(sorted(found, key=lambda p: p.as_posix()))
+
+
 def fetch_snapshot(
     remote: RemoteRepo,
     workdir: Path,
@@ -356,25 +380,50 @@ def fetch_snapshot(
     # Determinism is unaffected: the tree listing is sorted independently and
     # each file lands at its own path, so completion order cannot be observed.
     total = 0
-    with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_CONCURRENCY) as pool:
-        futures = [pool.submit(_fetch_one, rel) for rel in selected]
-        try:
-            for future in concurrent.futures.as_completed(futures):
-                rel, content = future.result()
-                total += len(content)
-                if len(content) > max_file_bytes or total > max_total_bytes:
-                    raise IngestError("fetch size limit exceeded mid-download", 413)
-                target = workdir / str(rel)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-        except BaseException:
-            for future in futures:
-                future.cancel()
-            raise
+
+    def _materialize(paths: tuple[PurePosixPath, ...]) -> None:
+        nonlocal total
+        if not paths:
+            return
+        with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_CONCURRENCY) as pool:
+            futures = [pool.submit(_fetch_one, rel) for rel in paths]
+            try:
+                for future in concurrent.futures.as_completed(futures):
+                    rel, content = future.result()
+                    total += len(content)
+                    if len(content) > max_file_bytes or total > max_total_bytes:
+                        raise IngestError("fetch size limit exceeded mid-download", 413)
+                    target = workdir / str(rel)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(content)
+            except BaseException:
+                for future in futures:
+                    future.cancel()
+                raise
+
+    _materialize(selected)
+
+    # Second pass: the companion Markdown docs linked from the instruction files
+    # just fetched. `quality.references.pointers-not-snippets` reads those docs'
+    # bytes, so they must exist in the snapshot — otherwise the same commit
+    # scores differently in the web app than on the CLI (D3 web/CLI parity).
+    # One hop only: the rule never follows a reference of a reference.
+    referenced = _referenced_docs(workdir, selected, set(listed) - set(selected))
+    referenced = tuple(p for p in referenced if sizes.get(p, 0) <= max_file_bytes)
+    if len(selected) + len(referenced) > max_fetch_files:
+        # Fail loudly rather than silently dropping the pass: a partial snapshot
+        # is exactly the divergence this pass exists to prevent.
+        raise IngestError(
+            f"This repository has {len(selected) + len(referenced)} AI-artifact and referenced "
+            f"documentation files (limit {max_fetch_files}). "
+            "Self-host AgentCompass and analyze it via local-path mode.",
+            413,
+        )
+    _materialize(referenced)
 
     tree = RepoTree(root=workdir, files=tuple(listed))
     stats = SnapshotStats(
-        listed_files=len(listed), fetched_files=len(selected),
+        listed_files=len(listed), fetched_files=len(selected) + len(referenced),
         fetched_bytes=total, resolved_sha=sha,
     )
     return tree, stats

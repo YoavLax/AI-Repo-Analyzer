@@ -198,6 +198,62 @@ def test_no_bypass_flags_nested_value_and_dangerous_key(tmp_path):
     assert "bypassPermissions" in messages
 
 
+# --- safety.permissions.least-privilege (v0.3.0) -----------------------------
+
+def test_least_privilege_na_without_settings(tmp_path):
+    index = _repo(tmp_path, {"CLAUDE.md": "# Memory\n"})
+    assert safety.check_permissions_least_privilege(index) is None
+
+
+def test_least_privilege_na_without_permissions_block(tmp_path):
+    index = _repo(tmp_path, {".claude/settings.json": '{"model": "opus"}\n'})
+    assert safety.check_permissions_least_privilege(index) is None
+
+
+def test_least_privilege_na_without_allow_list(tmp_path):
+    index = _repo(tmp_path, {".claude/settings.json": '{"permissions": {"deny": ["Read(.env)"]}}\n'})
+    assert safety.check_permissions_least_privilege(index) is None
+
+
+def test_least_privilege_passes_on_scoped_allow_rules(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json":
+            '{"permissions": {"allow": ["Edit(*)", "Read", "Bash(git *)", "Bash(npm run *)"]}}\n',
+    })
+    sat, diags = safety.check_permissions_least_privilege(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_least_privilege_flags_bare_bash(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json": '{"permissions": {"allow": ["Bash", "Read"]}}\n',
+    })
+    sat, diags = safety.check_permissions_least_privilege(index)
+    assert sat == 0.0
+    rel, diag = diags[0]
+    assert str(rel) == ".claude/settings.json"
+    assert diag.severity == Severity.WARNING
+    assert "Bash" in diag.message
+
+
+def test_least_privilege_flags_bash_wildcard_shape(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json": '{"permissions": {"allow": ["Bash(*)"]}}\n',
+    })
+    sat, diags = safety.check_permissions_least_privilege(index)
+    assert sat == 0.0
+    assert "Bash(*)" in diags[0][1].message
+
+
+def test_least_privilege_flags_global_wildcard(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json": '{"permissions": {"allow": ["*"]}}\n',
+    })
+    sat, diags = safety.check_permissions_least_privilege(index)
+    assert sat == 0.0
+
+
 # --- safety.settings.valid ---------------------------------------------------
 
 
@@ -240,6 +296,22 @@ def test_settings_valid_passes_on_known_keys(tmp_path):
     index = _repo(tmp_path, {
         ".claude/settings.json":
             '{"permissions": {}, "env": {}, "model": "opus", "defaultMode": "plan"}\n',
+    })
+    sat, diags = safety.check_settings_valid(index)
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_settings_valid_accepts_current_documented_keys(tmp_path):
+    # v0.3.0 schema fix: these keys were previously flagged as unknown even
+    # though they are documented, current settings.json keys.
+    index = _repo(tmp_path, {
+        ".claude/settings.json": (
+            '{"agent": "code-reviewer", "language": "english", '
+            '"autoUpdatesChannel": "stable", "effortLevel": "high", '
+            '"worktree": {}, "attribution": {}, "plansDirectory": "./plans", '
+            '"disableWorkflows": false, "skillOverrides": {}}\n'
+        ),
     })
     sat, diags = safety.check_settings_valid(index)
     assert sat == 1.0

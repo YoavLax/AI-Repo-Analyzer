@@ -26,10 +26,12 @@ _JSON_KINDS = frozenset({
 })
 
 # Kinds tracked by path only — their contents are never parsed (personal files
-# whose mere presence in the tree is what rules care about).
+# whose mere presence in the tree is what rules care about, or a workflow YAML
+# this project has no generic YAML parser for and only needs the presence of).
 _PATH_ONLY_KINDS = frozenset({
     ArtifactKind.CLAUDE_SETTINGS_LOCAL,
     ArtifactKind.CLAUDE_LOCAL_MD,
+    ArtifactKind.SETUP_STEPS,
 })
 
 
@@ -48,6 +50,7 @@ class ArtifactIndex:
     instructions: tuple[Artifact, ...] = ()
     prompts: tuple[Artifact, ...] = ()
     agents: tuple[Artifact, ...] = ()
+    commands: tuple[Artifact, ...] = ()
     claude_rules: tuple[Artifact, ...] = ()
     hooks: tuple[Artifact, ...] = ()
     mcp: tuple[Artifact, ...] = ()
@@ -55,12 +58,18 @@ class ArtifactIndex:
     claude_settings_local_paths: tuple[PurePosixPath, ...] = ()
     claude_local_md_paths: tuple[PurePosixPath, ...] = ()
     agents_md_nested: tuple[PurePosixPath, ...] = ()
+    gemini_md: ParsedDocument | None = None
+    gemini_md_path: PurePosixPath | None = None
+    setup_steps: Artifact | None = None
     tree: RepoTree | None = None
     facts: RepoFacts | None = None
 
     def entrypoint_docs(self) -> tuple[ParsedDocument, ...]:
         """The always-on entry points that exist, in stable order."""
-        return tuple(d for d in (self.copilot_instructions, self.claude_md) if d is not None)
+        return tuple(
+            d for d in (self.copilot_instructions, self.claude_md, self.gemini_md)
+            if d is not None
+        )
 
     def entrypoint_paths(self) -> tuple[PurePosixPath, ...]:
         """Relative paths for `entrypoint_docs()`, in the same order (for
@@ -73,6 +82,8 @@ class ArtifactIndex:
                     break
         if self.claude_md is not None and self.claude_md_path is not None:
             paths.append(self.claude_md_path)
+        if self.gemini_md is not None and self.gemini_md_path is not None:
+            paths.append(self.gemini_md_path)
         return tuple(paths)
 
 
@@ -149,6 +160,12 @@ def build_index(tree: RepoTree) -> ArtifactIndex:
 
     settings = by_kind[ArtifactKind.CLAUDE_SETTINGS]
 
+    gemini = by_kind[ArtifactKind.ENTRYPOINT_GEMINI]
+    gemini_md = gemini[0].doc if gemini else None
+    gemini_md_path = gemini[0].rel_path if gemini and gemini[0].doc is not None else None
+
+    setup_steps = by_kind[ArtifactKind.SETUP_STEPS]
+
     return ArtifactIndex(
         root=tree.root,
         skills=skills,
@@ -172,6 +189,10 @@ def build_index(tree: RepoTree) -> ArtifactIndex:
             a.rel_path for a in by_kind[ArtifactKind.CLAUDE_LOCAL_MD]
         ),
         agents_md_nested=agents_md_nested,
+        commands=tuple(by_kind[ArtifactKind.COMMAND]),
+        gemini_md=gemini_md,
+        gemini_md_path=gemini_md_path,
+        setup_steps=setup_steps[0] if setup_steps else None,
         tree=tree,
         facts=probe(tree),
     )

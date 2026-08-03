@@ -417,3 +417,190 @@ def test_server_gate_is_bound_per_event_loop():
         thread.join()
     assert errors == []
     assert statuses == [200, 200, 200, 200]
+
+
+# --- PR "Add-Rules" review: online scan must read what the rules read --------
+
+_LINKING_REPO = {
+    "CLAUDE.md": (
+        "# X\n\n## Overview\nRepo.\n\n"
+        "See [architecture](docs/ARCH.md) for details.\n\n"
+        "- Run `pytest` and re-run until the tests pass.\n"
+    ),
+    "docs/ARCH.md": "# Arch\n\n```python\n" + "x = 1\n" * 60 + "```\n",
+    "src/app.py": "x = 1\n",
+}
+
+
+def test_online_scan_fetches_markdown_docs_the_rules_read(tmp_path):
+    """`quality.references.pointers-not-snippets` reads the bytes of companion
+    docs linked from an entry point. The clone-free snapshot selects artifacts
+    only, so before the fix those docs were absent and the rule silently passed
+    — the same commit scored higher in the web app than on the CLI (D3).
+    """
+    from airx.ingest import RemoteRepo, fetch_snapshot
+    from tests.test_ingest import FakeFetcher
+
+    disk = tmp_path / "disk"
+    for rel, content in _LINKING_REPO.items():
+        path = disk / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode("utf-8"))
+    disk_index = build_index(fs.scan(disk))
+    disk_report = to_json_dict(disk_index, score(disk_index))
+    disk_report["target"] = {"root": "R"}
+
+    snap_dir = tmp_path / "snap"
+    snap_dir.mkdir()
+    tree, stats = fetch_snapshot(
+        RemoteRepo("o", "r"), snap_dir, fetcher=FakeFetcher(_LINKING_REPO),
+    )
+    snap_index = build_index(tree)
+    snap_report = to_json_dict(snap_index, score(snap_index))
+    snap_report["target"] = {"root": "R"}
+
+    assert (snap_dir / "docs" / "ARCH.md").is_file()
+    assert stats.fetched_files == 2  # CLAUDE.md + the doc it links
+    assert snap_report == disk_report
+    assert any(
+        f["rule_id"] == "quality.references.pointers-not-snippets"
+        for f in snap_report["findings"]
+    )
+
+
+def test_online_scan_never_fetches_unreferenced_source(tmp_path):
+    """The referenced-doc pass is one hop over Markdown links only: it must not
+    turn the artifact-scoped snapshot into a full clone."""
+    from airx.ingest import RemoteRepo, fetch_snapshot
+    from tests.test_ingest import FakeFetcher
+
+    fetcher = FakeFetcher(_LINKING_REPO)
+    fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=fetcher)
+    assert not (tmp_path / "src" / "app.py").exists()
+    assert not any(url.endswith("src/app.py") for url in fetcher.raw_urls)
+
+
+def test_referenced_doc_pass_respects_the_fetch_file_cap(tmp_path):
+    """Referenced docs count against `max_fetch_files`. Exceeding it must fail
+    loudly — silently dropping the pass would reintroduce the very web/CLI
+    divergence the pass exists to prevent."""
+    from airx.ingest import IngestError, RemoteRepo, fetch_snapshot
+    from tests.test_ingest import FakeFetcher
+
+    with pytest.raises(IngestError) as exc:
+        fetch_snapshot(
+            RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(_LINKING_REPO), max_fetch_files=1,
+        )
+    assert exc.value.status == 413
+    assert "limit 1" in exc.value.user_message
+
+
+def test_reference_link_shape_is_shared_between_ingest_and_the_rule():
+    """One compiled pattern and one resolver, not two of each: if ingest
+    resolved a different set of links than the rules that read them, D3 parity
+    would silently rot again."""
+    from airx import ingest, markdown
+    from airx.rules import skills as skills_module
+
+    assert quality_rules._MD_LINK_RE is markdown.MD_LINK_RE
+    assert skills_module._MD_LINK_RE is markdown.MD_LINK_RE
+    assert skills_module._extract_references is markdown.extract_references
+    assert ingest.referenced_markdown is markdown.referenced_markdown
+
+
+def test_referenced_markdown_resolution_is_pure_and_confined():
+    from pathlib import PurePosixPath
+
+    from airx.markdown import referenced_markdown
+
+    body = (
+        "[a](../../escape.md) [b](/abs.md) [c](https://x.test/y.md) "
+        "[d](sub/two.md) [e](./sub/two.md) [f](notes.txt) [g](../top.md)"
+    )
+    targets = referenced_markdown(body, PurePosixPath("docs/README.md"))
+    # `../top.md` resolves to `top.md` — still inside the repo, so it is kept;
+    # `../../escape.md` leaves the root and is dropped, as are the absolute,
+    # external, and non-Markdown links. `./sub/two.md` de-duplicates with
+    # `sub/two.md`.
+    assert targets == (PurePosixPath("docs/sub/two.md"), PurePosixPath("top.md"))
+
+
+def test_conditional_references_is_scored_per_entry_point(tmp_path):
+    """One well-written entry point must not mask an unconditional one.
+
+    The rule originally tracked a single repo-wide `any_conditional` flag, so a
+    CLAUDE.md with a load condition scored the whole repo 1.0 and discarded the
+    diagnostics already collected for its siblings.
+    """
+    conditional = "# A\n\n## Overview\nX.\n\nRead [testing](docs/testing.md) when writing new tests.\n"
+    unconditional = "# B\n\n## Overview\nX.\n\nSee [arch](docs/arch.md) and [api](docs/api.md).\n"
+    index = _repo(tmp_path, {
+        "CLAUDE.md": conditional,
+        "GEMINI.md": unconditional,
+        "docs/testing.md": "x\n",
+        "docs/arch.md": "x\n",
+        "docs/api.md": "y\n",
+    })
+    satisfaction, diags = foundation_rules.check_entrypoint_conditional_references(index)
+    assert satisfaction == 0.5
+    assert [str(path) for path, _ in diags] == ["GEMINI.md"]
+
+
+def test_fenced_example_links_are_not_treated_as_references(tmp_path):
+    """A Markdown link shown inside a fenced example is documentation, not a
+    live reference.
+
+    `airx.rules.skills` already stripped fences for exactly this reason; the
+    quality-pillar link rules scanned the raw body, so a ```markdown block
+    teaching link syntax produced a broken-link finding — and, once ingest
+    started resolving the same links, a network fetch for a doc nobody
+    references.
+    """
+    body = (
+        "# X\n\n## Overview\nRepo.\n\n"
+        "Write references like this:\n\n"
+        "```markdown\n"
+        "See [architecture](docs/DOES-NOT-EXIST.md) for details.\n"
+        "```\n\n"
+        "- Run `pytest` and re-run until the tests pass.\n"
+    )
+    index = _repo(tmp_path, {"CLAUDE.md": body, "src/app.py": "x = 1\n"})
+    result = quality_rules.check_links_resolve(index)
+    assert result is None, "the only link is inside a fence, so the rule is N/A"
+
+    from pathlib import PurePosixPath
+
+    from airx.markdown import referenced_markdown
+
+    assert referenced_markdown(body, PurePosixPath("CLAUDE.md")) == ()
+
+
+def test_command_frontmatter_rejects_skill_package_metadata(tmp_path):
+    """`KNOWN_COMMAND_FIELDS` was aliased to the whole SKILL/instructions field
+    set, so skill-package metadata passed on a slash command and the
+    unknown-field check had nothing left to catch."""
+    index = _repo(tmp_path, {
+        ".claude/commands/release.md": (
+            "---\ndescription: Cuts a release.\nlicense: MIT\nversion: 1.2.3\n"
+            "author: someone\ntags: [ops]\npaths: ['src/**']\n---\n\nDo it.\n"
+        ),
+    })
+    satisfaction, diags = agents_rules.check_commands_frontmatter_valid(index)
+    assert satisfaction == 0.0
+    flagged = sorted(
+        d.message.split("'")[1] for _, d in diags if "Unknown command" in d.message
+    )
+    assert flagged == ["author", "license", "paths", "tags", "version"]
+
+
+def test_command_frontmatter_still_accepts_the_documented_invocation_schema(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/commands/review.md": (
+            "---\ndescription: Reviews the diff.\nallowed-tools: Bash(git diff:*)\n"
+            "argument-hint: '[pr-number]'\nmodel: claude-opus-5\n"
+            "disable-model-invocation: false\nhide-from-slash-command-tool: true\n---\n\nReview.\n"
+        ),
+    })
+    satisfaction, diags = agents_rules.check_commands_frontmatter_valid(index)
+    assert satisfaction == 1.0
+    assert diags == []

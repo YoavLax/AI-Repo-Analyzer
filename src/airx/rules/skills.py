@@ -27,7 +27,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from airx import config, fs
+from airx import config, fs, markdown as md
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
 from airx.rules.registry import RuleScope, rule
 from airx.tokenizer import estimate_tokens
@@ -112,7 +112,7 @@ _STOP_WORDS = frozenset({
     "where", "how", "all", "any", "this", "that", "these", "those", "it", "its",
 })
 
-_CODE_BLOCK_RE = re.compile(r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)\s*$", re.MULTILINE | re.DOTALL)
+_CODE_BLOCK_RE = md.CODE_BLOCK_RE
 _TABLE_ROW_RE = re.compile(r"^\|.*\|$", re.MULTILINE)
 _TABLE_SEPARATOR_RE = re.compile(r"^\|[\s:|-]+\|$")
 _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
@@ -122,12 +122,12 @@ _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
 # https://example.com) rather than a reference to a file bundled with this
 # skill \u2014 flagging them as an escaping/broken filesystem reference is a
 # false positive, not a real CWE-59 concern.
-_MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:|/)([^)\s#]+)(?:#[^)]*)?\)")
+_MD_LINK_RE = md.MD_LINK_RE
 # Path-charset-only capture: excludes backticks, quotes, brackets, and angle
 # brackets so "...input file: [`x.csv`](x.csv)" (an ordinary sentence ending
 # in "file:", not a directive) and "source: <https://example.com/a.b>" can't
 # smuggle markdown-link or autolink syntax into the captured "path".
-_DIRECTIVE_RE = re.compile(r"(?:source|file|include):\s*([A-Za-z0-9_.\-/]+\.[a-zA-Z0-9]+)", re.IGNORECASE)
+_DIRECTIVE_RE = md.DIRECTIVE_RE
 
 # --- v0.2.0 additions (plan-v2-fable.md §4.2) --------------------------------
 
@@ -139,7 +139,7 @@ _NAMESPACE_CHARS: tuple[str, ...] = ("/", ":")
 
 #: A reference is considered conditionally loaded when the line mentioning it
 #: (or a directly adjacent line) matches this pattern (plan-v2-fable.md §4.2).
-_LOAD_TRIGGER_RE = re.compile(r"(?:when|if|read .* (?:for|when|if)|run .* when)", re.IGNORECASE)
+_LOAD_TRIGGER_RE = md.LOAD_TRIGGER_RE
 
 #: Literal substrings that mark a script as interactive (blocks agent sessions).
 _INTERACTIVE_PATTERNS: tuple[str, ...] = ("input(", "read -p", "Read-Host", "prompt(")
@@ -256,23 +256,12 @@ def score_description(desc: str) -> tuple[int, list[str]]:
     return total, suggestions
 
 
-def _extract_references(body: str) -> list[str]:
-    # Fenced code blocks (```...``` / ~~~...~~~) commonly hold illustrative
-    # example syntax (e.g. a template for a *generated* file, or a sample CLI
-    # invocation) rather than live directives the agent should load — strip
-    # them before scanning for references so those examples aren't treated
-    # as broken links to files that were never meant to exist.
-    body = _CODE_BLOCK_RE.sub("", body)
-    refs: list[str] = []
-    refs.extend(_MD_LINK_RE.findall(body))
-    refs.extend(_DIRECTIVE_RE.findall(body))
-    seen: set[str] = set()
-    unique: list[str] = []
-    for ref in refs:
-        if ref not in seen:
-            seen.add(ref)
-            unique.append(ref)
-    return unique
+#: Fenced code blocks commonly hold illustrative example syntax (a template for
+#: a *generated* file, a sample CLI invocation) rather than live directives the
+#: agent should load, so `airx.markdown.extract_references` strips them first.
+#: Shared with `airx.rules.foundation` and, transitively, with `airx.ingest`,
+#: which must fetch exactly the files these rules go on to read (D3).
+_extract_references = md.extract_references
 
 
 def _reference_depth(ref_path: str) -> int:
