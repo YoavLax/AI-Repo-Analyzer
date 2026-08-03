@@ -58,7 +58,7 @@ jobs:
       - name: Smoke-test the container
         run: |
           docker run -d --name cc -p 8080:8080 agentcompass:ci
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then ok=1; break; fi
             sleep 1
           done
@@ -92,3 +92,50 @@ jobs:
         run: |
           airx rules --format md > /tmp/RULES.md
           diff -u docs/RULES.md /tmp/RULES.md
+
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    # Every other job, not just `test`: a green matrix with a broken frontend
+    # build or an unbuildable image must never reach production.
+    needs: [test, web, docker, helm, dogfood]
+    # Pushes to main only. `pull_request` runs share this workflow, and a PR
+    # from a fork would otherwise deploy unreviewed code with the production
+    # token.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Never cancel a deploy midway — a half-applied release is worse than a
+    # queued one. Later pushes wait instead.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: https://ai-repo-analyzer.fly.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --remote-only --wait-timeout 300
+
+      - name: Smoke-test the deployed release
+        run: |
+          # fly.toml runs min_machines_running = 0, so the first request after a
+          # release wakes a machine — retry rather than assuming it is warm.
+          for _ in $(seq 1 30); do
+            if curl -fsS https://ai-repo-analyzer.fly.dev/api/health >/dev/null 2>&1; then
+              ok=1; break
+            fi
+            sleep 2
+          done
+          test "$ok" = 1
+          curl -fsS https://ai-repo-analyzer.fly.dev/ | grep -qi agentcompass
+          version=$(curl -fsS https://ai-repo-analyzer.fly.dev/api/version)
+          echo "deployed: $version"
+          # Guards against a release that silently served a stale image.
+          echo "$version" | grep -q "$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)"

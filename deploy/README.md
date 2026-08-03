@@ -141,6 +141,60 @@ kubectl port-forward svc/agentcompass 8080:80
 curl -s http://localhost:8080/api/health   # {"status":"ok"}
 ```
 
+## Fly.io: continuous deployment from `main`
+
+[`fly.toml`](../fly.toml) configures the hosted deployment (app
+`ai-repo-analyzer`, region `fra`, 1 vCPU / 1 GB). It scales to zero
+(`min_machines_running = 0`) and wakes on the first request, so an idle
+deployment costs nothing.
+
+The `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+releases every push to `main` automatically. It runs only after **all** other
+CI jobs pass — the full test matrix, the frontend build, the Docker image
+smoke test, the Helm lint, and the dogfood run — so a green test matrix alone
+cannot ship a broken frontend or an unbuildable image. After `flyctl deploy`
+it re-checks the live release: `/api/health`, the served SPA, and that
+`/api/version` reports the version in `pyproject.toml` (which catches a
+release that silently kept serving the previous image).
+
+### One-time setup
+
+1. Create a Fly deploy token:
+
+   ```sh
+   flyctl tokens create deploy --app ai-repo-analyzer --name github-actions
+   ```
+
+2. Add it as the repository secret `FLY_API_TOKEN`
+   (*Settings → Secrets and variables → Actions → New repository secret*), or:
+
+   ```sh
+   gh secret set FLY_API_TOKEN --app actions
+   ```
+
+3. Set the GitHub API token on the app itself — it is a **runtime** secret, not
+   a build one, so it belongs on Fly rather than in Actions:
+
+   ```sh
+   flyctl secrets set GITHUB_TOKEN=ghp_yourtoken --app ai-repo-analyzer
+   ```
+
+   For public repositories this token needs **no scopes at all**; an unscoped
+   token still raises the GitHub API limit from 60 to 5,000 requests/hour, and
+   cannot do anything else if it leaks.
+
+The job declares the `production` GitHub environment, so a required reviewer
+can be added there later to gate releases behind manual approval without
+touching the workflow.
+
+### Manual release
+
+```sh
+flyctl deploy --remote-only          # build on Fly's builders
+flyctl logs --app ai-repo-analyzer
+flyctl status --app ai-repo-analyzer
+```
+
 ## Configuration reference
 
 | Environment variable | Default | Purpose |
