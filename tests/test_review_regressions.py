@@ -481,16 +481,18 @@ def test_online_scan_never_fetches_unreferenced_source(tmp_path):
 
 
 def test_referenced_doc_pass_respects_the_fetch_file_cap(tmp_path):
-    """Referenced docs count against `max_fetch_files`; exceeding it drops the
-    extra pass rather than silently blowing past a deployment's budget."""
-    from airx.ingest import RemoteRepo, fetch_snapshot
+    """Referenced docs count against `max_fetch_files`. Exceeding it must fail
+    loudly — silently dropping the pass would reintroduce the very web/CLI
+    divergence the pass exists to prevent."""
+    from airx.ingest import IngestError, RemoteRepo, fetch_snapshot
     from tests.test_ingest import FakeFetcher
 
-    tree, stats = fetch_snapshot(
-        RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(_LINKING_REPO), max_fetch_files=1,
-    )
-    assert stats.fetched_files == 1
-    assert not (tmp_path / "docs" / "ARCH.md").exists()
+    with pytest.raises(IngestError) as exc:
+        fetch_snapshot(
+            RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(_LINKING_REPO), max_fetch_files=1,
+        )
+    assert exc.value.status == 413
+    assert "limit 1" in exc.value.user_message
 
 
 def test_reference_link_shape_is_shared_between_ingest_and_the_rule():
@@ -516,3 +518,24 @@ def test_referenced_markdown_resolution_is_pure_and_confined():
     # external, and non-Markdown links. `./sub/two.md` de-duplicates with
     # `sub/two.md`.
     assert targets == (PurePosixPath("docs/sub/two.md"), PurePosixPath("top.md"))
+
+
+def test_conditional_references_is_scored_per_entry_point(tmp_path):
+    """One well-written entry point must not mask an unconditional one.
+
+    The rule originally tracked a single repo-wide `any_conditional` flag, so a
+    CLAUDE.md with a load condition scored the whole repo 1.0 and discarded the
+    diagnostics already collected for its siblings.
+    """
+    conditional = "# A\n\n## Overview\nX.\n\nRead [testing](docs/testing.md) when writing new tests.\n"
+    unconditional = "# B\n\n## Overview\nX.\n\nSee [arch](docs/arch.md) and [api](docs/api.md).\n"
+    index = _repo(tmp_path, {
+        "CLAUDE.md": conditional,
+        "GEMINI.md": unconditional,
+        "docs/testing.md": "x\n",
+        "docs/arch.md": "x\n",
+        "docs/api.md": "y\n",
+    })
+    satisfaction, diags = foundation_rules.check_entrypoint_conditional_references(index)
+    assert satisfaction == 0.5
+    assert [str(path) for path, _ in diags] == ["GEMINI.md"]

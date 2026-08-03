@@ -365,7 +365,11 @@ def check_entrypoint_conditional_references(index: ArtifactIndex):
         return None
     paths = index.entrypoint_paths()
     total_refs = 0
-    any_conditional = False
+    # Scored per entry point and averaged, like every other multi-document rule
+    # here: a repo-wide "any entry point got it right" flag would let one
+    # well-written CLAUDE.md hide the same problem in GEMINI.md and
+    # copilot-instructions.md, and would discard their diagnostics.
+    sats: list[float] = []
     diags: list[tuple] = []
     for doc, path in zip(docs, paths):
         refs = skills_rules._extract_references(doc.body)
@@ -373,22 +377,22 @@ def check_entrypoint_conditional_references(index: ArtifactIndex):
             continue
         total_refs += len(refs)
         lines = doc.body.splitlines()
+        conditional = False
         for i, line in enumerate(lines):
             if not any(ref in line for ref in refs):
                 continue
             window = lines[max(0, i - 1): i + 2]
             if any(skills_rules._LOAD_TRIGGER_RE.search(neighbor) for neighbor in window):
-                any_conditional = True
+                conditional = True
                 break
-        if not any_conditional:
+        sats.append(1.0 if conditional else 0.0)
+        if not conditional:
             diags.append((path, Diagnostic(
                 rule_id="foundation.entrypoint.conditional-references", severity=Severity.INFO,
                 message=f"{doc.path.name} references {len(refs)} companion doc(s) but none is "
                         f"introduced with a load condition; tell the agent when to read each "
                         f"one (e.g. 'Read X when ...').",
             )))
-    if total_refs < config.MIN_REFERENCES_FOR_CONDITIONAL_CHECK:
+    if total_refs < config.MIN_REFERENCES_FOR_CONDITIONAL_CHECK or not sats:
         return None  # N/A: nothing to gate
-    if any_conditional:
-        return 1.0, []
-    return 0.0, diags
+    return sum(sats) / len(sats), diags

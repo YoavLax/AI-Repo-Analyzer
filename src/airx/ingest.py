@@ -409,10 +409,16 @@ def fetch_snapshot(
     # One hop only: the rule never follows a reference of a reference.
     referenced = _referenced_docs(workdir, selected, set(listed) - set(selected))
     referenced = tuple(p for p in referenced if sizes.get(p, 0) <= max_file_bytes)
-    if referenced and len(selected) + len(referenced) <= max_fetch_files:
-        _materialize(referenced)
-    else:
-        referenced = ()
+    if len(selected) + len(referenced) > max_fetch_files:
+        # Fail loudly rather than silently dropping the pass: a partial snapshot
+        # is exactly the divergence this pass exists to prevent.
+        raise IngestError(
+            f"This repository has {len(selected) + len(referenced)} AI-artifact and referenced "
+            f"documentation files (limit {max_fetch_files}). "
+            "Self-host AgentCompass and analyze it via local-path mode.",
+            413,
+        )
+    _materialize(referenced)
 
     tree = RepoTree(root=workdir, files=tuple(listed))
     stats = SnapshotStats(
