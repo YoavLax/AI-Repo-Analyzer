@@ -7,6 +7,8 @@ order below is the precedence order.
 """
 from __future__ import annotations
 
+import posixpath
+import re
 from pathlib import PurePosixPath
 from typing import Callable, NamedTuple
 
@@ -158,3 +160,28 @@ def classify(rel: PurePosixPath) -> tuple[ArtifactKind, Platform] | None:
                 return spec.kind, _agent_platform(rel)
             return spec.kind, spec.platform
     return None
+
+
+#: Relative Markdown links in a Markdown body — external URLs and pure
+#: `#anchor` links never match. Shared by `airx.rules.quality` (which resolves
+#: and reads these targets) and `airx.ingest` (which must fetch what the rules
+#: read), so the two can never drift apart.
+MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
+
+
+def referenced_markdown(text: str, from_rel: PurePosixPath) -> tuple[PurePosixPath, ...]:
+    """Repo-relative `.md` targets linked from `from_rel`'s text, resolved
+    against its directory, de-duplicated, in stable sorted order.
+
+    Pure and filesystem-free: absolute and repo-escaping links are dropped, and
+    the caller decides which of the remaining targets actually exist.
+    """
+    targets: set[str] = set()
+    for ref in MD_LINK_RE.findall(text):
+        if ref.startswith("/") or not ref.endswith(".md"):
+            continue
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(from_rel.as_posix()), ref))
+        if target.startswith(".."):
+            continue
+        targets.add(target)
+    return tuple(PurePosixPath(t) for t in sorted(targets))

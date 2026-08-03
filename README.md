@@ -11,13 +11,14 @@ out, every time.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
-> **Status: v0.2.0 "Fable" — pre-1.0.** All eight scoring pillars are live
-> with a catalog of 94 rules, platform sub-scores, waivers, and
-> terminal/JSON/Markdown/SARIF reports. The original design document is
-> [`plan.md`](plan.md); the v0.2.0 refactor plan is
-> [`plan-v2-fable.md`](plan-v2-fable.md); the full generated rule catalog is
-> [`docs/RULES.md`](docs/RULES.md). See [`CHANGELOG.md`](CHANGELOG.md) for
-> exactly what's built.
+> **Status: v0.3.0 "AgentCompass" — pre-1.0.** All eight scoring pillars are
+> live with a catalog of 104 rules, platform sub-scores, waivers,
+> terminal/JSON/Markdown/SARIF reports, and a clone-free web UI. The original
+> design document is [`plan.md`](plan.md); the v0.2.0 refactor plan is
+> [`plan-v2-fable.md`](plan-v2-fable.md) and the web-app plan is
+> [`plan-v3-codecompass.md`](plan-v3-codecompass.md); the full generated rule
+> catalog is [`docs/RULES.md`](docs/RULES.md). See
+> [`CHANGELOG.md`](CHANGELOG.md) for exactly what's built.
 
 ---
 
@@ -36,7 +37,7 @@ offline, and with a specific file and line number for every issue.
 
 ## What it checks
 
-Eight pillars, 94 rules ([full catalog](docs/RULES.md)):
+Eight pillars, 104 rules ([full catalog](docs/RULES.md)):
 
 | Pillar | Weight | What it covers |
 |---|---|---|

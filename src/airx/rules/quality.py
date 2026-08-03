@@ -22,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from airx import config
 from airx.discovery import ArtifactIndex
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
+from airx.patterns import MD_LINK_RE
 from airx.rules.registry import RuleScope, rule
 
 # --- module-level compiled constants (determinism contract §0) ----------------
@@ -62,8 +63,11 @@ _STALE_RES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
 )
 
 # Same link shape as airx.rules.skills: relative Markdown links only —
-# http(s)/mailto URLs and pure `#anchor` links never match.
-_MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
+# http(s)/mailto URLs and pure `#anchor` links never match. Imported from
+# airx.patterns rather than re-compiled here because airx.ingest resolves the
+# very same links to decide what a clone-free snapshot must fetch; if the two
+# shapes drifted, the web report would diverge from the CLI's (D3).
+_MD_LINK_RE = MD_LINK_RE
 
 # Fenced code block body (mirrors airx.rules.skills._CODE_BLOCK_RE /
 # airx.rules.verification._FENCED_BLOCK_RE — duplicated locally per this
