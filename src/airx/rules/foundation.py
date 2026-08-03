@@ -24,7 +24,7 @@ from airx.model import (
     Severity,
 )
 from airx.rules.registry import RuleScope, rule
-from airx.rules import skills as skills_rules
+from airx import markdown as md
 from airx import config
 
 _HEADING_RE = re.compile(r"^#{1,3}\s", re.MULTILINE)
@@ -372,7 +372,7 @@ def check_entrypoint_conditional_references(index: ArtifactIndex):
     sats: list[float] = []
     diags: list[tuple] = []
     for doc, path in zip(docs, paths):
-        refs = skills_rules._extract_references(doc.body)
+        refs = md.extract_references(doc.body)
         if not refs:
             continue
         total_refs += len(refs)
@@ -382,7 +382,7 @@ def check_entrypoint_conditional_references(index: ArtifactIndex):
             if not any(ref in line for ref in refs):
                 continue
             window = lines[max(0, i - 1): i + 2]
-            if any(skills_rules._LOAD_TRIGGER_RE.search(neighbor) for neighbor in window):
+            if any(md.LOAD_TRIGGER_RE.search(neighbor) for neighbor in window):
                 conditional = True
                 break
         sats.append(1.0 if conditional else 0.0)

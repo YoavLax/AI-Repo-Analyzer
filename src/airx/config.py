@@ -170,10 +170,26 @@ KNOWN_AGENT_FIELDS: frozenset[str] = frozenset({
     "hooks", "memory", "background", "effort", "isolation", "initialPrompt",
 })
 
-#: Frontmatter fields legitimate on `.claude/commands/*.md` (claude-commands.md).
-#: Shares most of the schema with SKILL.md/prompt frontmatter plus command-only
-#: `arguments`/`argument-hint` invocation fields already in KNOWN_FRONTMATTER_FIELDS.
-KNOWN_COMMAND_FIELDS: frozenset[str] = KNOWN_FRONTMATTER_FIELDS
+#: Frontmatter fields legitimate on `.claude/commands/**/*.md` (claude-commands.md).
+#:
+#: Deliberately NOT aliased to KNOWN_FRONTMATTER_FIELDS. A command is neither a
+#: skill package nor a path-scoped instructions file, so inheriting that whole
+#: schema let `license`, `version`, `author`, `tags`, `metadata`, `paths`,
+#: `mode` and `compatibility` pass silently — with nothing left for the
+#: unknown-field half of `agents.commands.frontmatter.valid` to catch.
+#:
+#: Contents: the invocation/dispatch schema (documented command fields, plus the
+#: fields observed across a 65-file survey of real `.claude/commands` trees:
+#: `description`, `allowed-tools`, `argument-hint`, `disable-model-invocation`,
+#: `hide-from-slash-command-tool`). Skill-package metadata and instructions-only
+#: path scoping are excluded.
+KNOWN_COMMAND_FIELDS: frozenset[str] = frozenset({
+    "name", "description", "when_to_use",
+    "model", "agent", "context", "effort", "background",
+    "allowed-tools", "disallowed-tools", "skills", "hooks", "shell",
+    "argument-hint", "arguments",
+    "disable-model-invocation", "hide-from-slash-command-tool", "user-invocable",
+})
 KNOWN_PROMPT_FIELDS: frozenset[str] = frozenset({
     "name", "description", "mode", "model", "tools", "agent", "argument-hint",
 })

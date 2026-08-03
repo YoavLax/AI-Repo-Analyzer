@@ -20,9 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from airx import config
+from airx import markdown as md
 from airx.discovery import ArtifactIndex
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
-from airx.patterns import MD_LINK_RE
 from airx.rules.registry import RuleScope, rule
 
 # --- module-level compiled constants (determinism contract §0) ----------------
@@ -62,17 +62,13 @@ _STALE_RES: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     for marker in config.STALE_MARKERS
 )
 
-# Same link shape as airx.rules.skills: relative Markdown links only —
-# http(s)/mailto URLs and pure `#anchor` links never match. Imported from
-# airx.patterns rather than re-compiled here because airx.ingest resolves the
-# very same links to decide what a clone-free snapshot must fetch; if the two
-# shapes drifted, the web report would diverge from the CLI's (D3).
-_MD_LINK_RE = MD_LINK_RE
-
-# Fenced code block body (mirrors airx.rules.skills._CODE_BLOCK_RE /
-# airx.rules.verification._FENCED_BLOCK_RE — duplicated locally per this
-# codebase's convention of keeping pillar modules independent).
-_CODE_BLOCK_RE = re.compile(r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)\s*$", re.MULTILINE | re.DOTALL)
+# Relative Markdown links only — http(s)/mailto URLs, absolute paths and pure
+# `#anchor` links never match. Imported from airx.markdown rather than
+# re-compiled here because airx.ingest resolves the very same links to decide
+# what a clone-free snapshot must fetch; if the two shapes drifted, the web
+# report would diverge from the CLI's (D3).
+_MD_LINK_RE = md.MD_LINK_RE
+_CODE_BLOCK_RE = md.CODE_BLOCK_RE
 
 # quality.entrypoint.no-lint-rules: literal code-style phrases (config.STYLE_GUIDE_PHRASES),
 # compiled once, case-insensitive.
@@ -444,9 +440,11 @@ def check_links_resolve(index: ArtifactIndex):
     diags: list[tuple[PurePosixPath, Diagnostic]] = []
     for rel, doc in _quality_docs(index):
         refs: list[str] = []
-        for ref in _MD_LINK_RE.findall(doc.body):
-            # Root-absolute links are not relative links; skip them.
-            if not ref.startswith("/") and ref not in refs:
+        # Fenced blocks hold illustrative examples, not live links (see
+        # airx.markdown.strip_code_blocks) — a sample `[x](docs/EXAMPLE.md)`
+        # inside a ```markdown fence is not a broken reference.
+        for ref in _MD_LINK_RE.findall(md.strip_code_blocks(doc.body)):
+            if ref not in refs:
                 refs.append(ref)
         if not refs:
             continue
@@ -551,10 +549,11 @@ def check_references_pointers_not_snippets(index: ArtifactIndex):
     sats: list[float] = []
     diags: list[tuple[PurePosixPath, Diagnostic]] = []
     for rel, doc in _quality_docs(index):
-        for ref in _MD_LINK_RE.findall(doc.body):
-            if ref.startswith("/") or not ref.endswith(".md"):
-                continue
-            target = posixpath.normpath(posixpath.join(posixpath.dirname(str(rel)), ref))
+        # The exact resolver airx.ingest uses to decide what a clone-free
+        # snapshot must fetch — same function, so the set of docs read here can
+        # never exceed the set of docs materialized there (D3).
+        for resolved in md.referenced_markdown(doc.body, rel):
+            target = resolved.as_posix()
             if target not in tree_files or target in seen_targets:
                 continue
             seen_targets.add(target)

@@ -496,17 +496,22 @@ def test_referenced_doc_pass_respects_the_fetch_file_cap(tmp_path):
 
 
 def test_reference_link_shape_is_shared_between_ingest_and_the_rule():
-    """One compiled pattern, not two: if ingest resolved a different set of
-    links than the rule that reads them, D3 parity would silently rot again."""
-    from airx import patterns
+    """One compiled pattern and one resolver, not two of each: if ingest
+    resolved a different set of links than the rules that read them, D3 parity
+    would silently rot again."""
+    from airx import ingest, markdown
+    from airx.rules import skills as skills_module
 
-    assert quality_rules._MD_LINK_RE is patterns.MD_LINK_RE
+    assert quality_rules._MD_LINK_RE is markdown.MD_LINK_RE
+    assert skills_module._MD_LINK_RE is markdown.MD_LINK_RE
+    assert skills_module._extract_references is markdown.extract_references
+    assert ingest.referenced_markdown is markdown.referenced_markdown
 
 
 def test_referenced_markdown_resolution_is_pure_and_confined():
     from pathlib import PurePosixPath
 
-    from airx.patterns import referenced_markdown
+    from airx.markdown import referenced_markdown
 
     body = (
         "[a](../../escape.md) [b](/abs.md) [c](https://x.test/y.md) "
@@ -539,3 +544,63 @@ def test_conditional_references_is_scored_per_entry_point(tmp_path):
     satisfaction, diags = foundation_rules.check_entrypoint_conditional_references(index)
     assert satisfaction == 0.5
     assert [str(path) for path, _ in diags] == ["GEMINI.md"]
+
+
+def test_fenced_example_links_are_not_treated_as_references(tmp_path):
+    """A Markdown link shown inside a fenced example is documentation, not a
+    live reference.
+
+    `airx.rules.skills` already stripped fences for exactly this reason; the
+    quality-pillar link rules scanned the raw body, so a ```markdown block
+    teaching link syntax produced a broken-link finding — and, once ingest
+    started resolving the same links, a network fetch for a doc nobody
+    references.
+    """
+    body = (
+        "# X\n\n## Overview\nRepo.\n\n"
+        "Write references like this:\n\n"
+        "```markdown\n"
+        "See [architecture](docs/DOES-NOT-EXIST.md) for details.\n"
+        "```\n\n"
+        "- Run `pytest` and re-run until the tests pass.\n"
+    )
+    index = _repo(tmp_path, {"CLAUDE.md": body, "src/app.py": "x = 1\n"})
+    result = quality_rules.check_links_resolve(index)
+    assert result is None, "the only link is inside a fence, so the rule is N/A"
+
+    from pathlib import PurePosixPath
+
+    from airx.markdown import referenced_markdown
+
+    assert referenced_markdown(body, PurePosixPath("CLAUDE.md")) == ()
+
+
+def test_command_frontmatter_rejects_skill_package_metadata(tmp_path):
+    """`KNOWN_COMMAND_FIELDS` was aliased to the whole SKILL/instructions field
+    set, so skill-package metadata passed on a slash command and the
+    unknown-field check had nothing left to catch."""
+    index = _repo(tmp_path, {
+        ".claude/commands/release.md": (
+            "---\ndescription: Cuts a release.\nlicense: MIT\nversion: 1.2.3\n"
+            "author: someone\ntags: [ops]\npaths: ['src/**']\n---\n\nDo it.\n"
+        ),
+    })
+    satisfaction, diags = agents_rules.check_commands_frontmatter_valid(index)
+    assert satisfaction == 0.0
+    flagged = sorted(
+        d.message.split("'")[1] for _, d in diags if "Unknown command" in d.message
+    )
+    assert flagged == ["author", "license", "paths", "tags", "version"]
+
+
+def test_command_frontmatter_still_accepts_the_documented_invocation_schema(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/commands/review.md": (
+            "---\ndescription: Reviews the diff.\nallowed-tools: Bash(git diff:*)\n"
+            "argument-hint: '[pr-number]'\nmodel: claude-opus-5\n"
+            "disable-model-invocation: false\nhide-from-slash-command-tool: true\n---\n\nReview.\n"
+        ),
+    })
+    satisfaction, diags = agents_rules.check_commands_frontmatter_valid(index)
+    assert satisfaction == 1.0
+    assert diags == []

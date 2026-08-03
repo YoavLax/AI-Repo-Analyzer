@@ -7,8 +7,6 @@ order below is the precedence order.
 """
 from __future__ import annotations
 
-import posixpath
-import re
 from pathlib import PurePosixPath
 from typing import Callable, NamedTuple
 
@@ -118,10 +116,20 @@ DISCOVERY_PATTERNS: tuple[PatternSpec, ...] = (
     ),
     PatternSpec(
         ArtifactKind.ENTRYPOINT_GEMINI,
-        # GitHub Copilot cloud agent also reads a root GEMINI.md (per its docs'
-        # supported custom-instructions list); this analyzer only models the
-        # Copilot/Claude platform axis, so GEMINI.md is tracked as an
-        # additional Copilot-visible entry point rather than a third platform.
+        # GitHub Copilot coding agent reads a root GEMINI.md in addition to
+        # .github/copilot-instructions.md, AGENTS.md and CLAUDE.md. The exact
+        # claim relied on, from GitHub's "add repository instructions" docs:
+        #
+        #   "Copilot coding agent [...] also supports AGENTS.md, CLAUDE.md and
+        #    GEMINI.md files."
+        #
+        # This is what makes `foundation.copilot.entrypoint` satisfiable by a
+        # GEMINI.md alone. If GitHub ever drops GEMINI.md from that list, this
+        # spec and that rule are what have to change — nothing else depends on
+        # the claim. This analyzer models only the Copilot/Claude platform axis,
+        # so GEMINI.md is an additional Copilot-visible entry point rather than
+        # a third platform.
+        # https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions
         Platform.COPILOT,
         lambda rel: rel == PurePosixPath("GEMINI.md"),
     ),
@@ -160,28 +168,3 @@ def classify(rel: PurePosixPath) -> tuple[ArtifactKind, Platform] | None:
                 return spec.kind, _agent_platform(rel)
             return spec.kind, spec.platform
     return None
-
-
-#: Relative Markdown links in a Markdown body — external URLs and pure
-#: `#anchor` links never match. Shared by `airx.rules.quality` (which resolves
-#: and reads these targets) and `airx.ingest` (which must fetch what the rules
-#: read), so the two can never drift apart.
-MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:)([^)\s#]+)(?:#[^)]*)?\)")
-
-
-def referenced_markdown(text: str, from_rel: PurePosixPath) -> tuple[PurePosixPath, ...]:
-    """Repo-relative `.md` targets linked from `from_rel`'s text, resolved
-    against its directory, de-duplicated, in stable sorted order.
-
-    Pure and filesystem-free: absolute and repo-escaping links are dropped, and
-    the caller decides which of the remaining targets actually exist.
-    """
-    targets: set[str] = set()
-    for ref in MD_LINK_RE.findall(text):
-        if ref.startswith("/") or not ref.endswith(".md"):
-            continue
-        target = posixpath.normpath(posixpath.join(posixpath.dirname(from_rel.as_posix()), ref))
-        if target.startswith(".."):
-            continue
-        targets.add(target)
-    return tuple(PurePosixPath(t) for t in sorted(targets))

@@ -27,7 +27,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
 
 from airx.fs import DEFAULT_EXCLUDED_DIRS, DEFAULT_MAX_FILES, RepoTree
-from airx.patterns import classify, referenced_markdown
+from airx.markdown import referenced_markdown
+from airx.patterns import classify
 
 API_HOST = "https://api.github.com"
 RAW_HOST = "https://raw.githubusercontent.com"
