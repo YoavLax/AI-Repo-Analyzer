@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+  h_e9eb605e3771cd 115,131,137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "9d2ad5a40e5132ed30738f33319279793091d703",
+  "prompts": {},
+  "humans": {
+    "h_e9eb605e3771cd": {
+      "author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
