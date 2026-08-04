@@ -1,0 +1,19 @@
+.github/skills/build-e2e-platform/SKILL.md
+  s_d88d783d399c50::t_b0c372fb7bf14c 1-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "220635900d27a5d9206820e6a7b00ca123442087",
+  "prompts": {},
+  "sessions": {
+    "s_d88d783d399c50": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "8adb0193-7288-4a7b-8cf5-07dfd85acb48",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
