@@ -1,0 +1,44 @@
+web/src/components/LoadingSkeleton.tsx
+  s_d449a595e59207::t_ec3946e760476f 16
+  s_d449a595e59207::t_255989845f635a 1-15,17-18,21-22,27,30
+web/src/components/PillarTable.tsx
+  s_d449a595e59207::t_e55595275a1a18 39
+web/src/styles.css
+  s_d449a595e59207::t_436df1ee3d75a5 12-32,52-76,81-98,110-128,131,134-135
+web/src/components/AuraBackground.tsx
+  s_d449a595e59207::t_137f96591a5884 1-20
+web/src/components/ScoreRing.tsx
+  s_d449a595e59207::t_95bd390d2cb028 1,13-18,22,26-36,44-48,72-74
+web/src/components/SearchHero.tsx
+  s_d449a595e59207::t_7c54baa57b9a47 8-13,38-57
+web/src/App.tsx
+  s_d449a595e59207::t_7c54baa57b9a47 3,141-142
+web/src/components/TopFixes.tsx
+  s_d449a595e59207::t_e55595275a1a18 18-21
+.github/skills/build-e2e-platform/SKILL.md
+  s_d0aa6eacecea7e::t_b8a188cf5b87c9 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7de723ffb974f651ee8675b3fbf59b803f65a6ad",
+  "prompts": {},
+  "sessions": {
+    "s_d0aa6eacecea7e": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "f37b8440-450d-4e8b-947e-65985a3a6f7b",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    },
+    "s_d449a595e59207": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "22e54063-9c5c-4641-b476-1d8bd501ce26",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
