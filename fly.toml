@@ -1,9 +1,14 @@
-# fly.toml app configuration file generated for ai-repo-analyzer on 2026-08-03T20:29:10+03:00
+# AgentCompass — Fly.io deployment.
 #
-# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+# `app` below is the single source of truth for the deploy target: flyctl reads
+# it for every command run from the repository root, and the CI deploy job in
+# .github/workflows/ci.yml derives the public URL (https://<app>.fly.dev) from
+# it. Do not restate the name anywhere else — see deploy/README.md.
+#
+# See https://fly.io/docs/reference/configuration/
 #
 
-app = 'ai-repo-analyzer'
+app = 'agent-compass'
 primary_region = 'fra'
 
 [build]
