@@ -51,7 +51,7 @@ gh repo clone owner/private-repo $env:TEMP\e2e-clone -- --depth 1
 .venv\Scripts\python.exe -m airx.cli analyze $env:TEMP\e2e-clone
 ```
 
-### 6. Clean up
+### 6. ONLY When asked: Clean up
 ```powershell
 docker compose down
 Remove-Item -Recurse -Force $env:TEMP\e2e-clone -ErrorAction SilentlyContinue

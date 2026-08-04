@@ -36,7 +36,7 @@ export function PillarTable({ pillars }: PillarTableProps) {
           return (
             <li
               key={pillar.id}
-              className="grid grid-cols-[7.5rem_1fr] items-center gap-x-4 gap-y-2 sm:grid-cols-[7.5rem_1fr_auto]"
+              className="-mx-2 grid grid-cols-[7.5rem_1fr] items-center gap-x-4 gap-y-2 rounded-lg p-2 transition-colors hover:bg-gray-50 dark:hover:bg-night-border/30 sm:grid-cols-[7.5rem_1fr_auto]"
             >
               <div>
                 <p

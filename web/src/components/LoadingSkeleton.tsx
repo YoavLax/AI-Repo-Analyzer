@@ -1,12 +1,33 @@
+import { useEffect, useState } from "react";
+
+const STAGES = [
+  "Fetching manifest \u2014 no clone, GitHub API only",
+  "Parsing skills, rules & agent configs",
+  "Scoring pillars against 100+ deterministic checks",
+];
+
+/** Cycles through pipeline-stage copy while an analysis is in flight, so the wait reads as real progress rather than a generic spinner. */
+function useStagedLabel(stages: string[], intervalMs = 1800): string {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setIndex((i) => (i + 1) % stages.length), intervalMs);
+    return () => clearInterval(id);
+  }, [stages, intervalMs]);
+  return stages[index] ?? stages[0] ?? "";
+}
+
 /** Skeleton dashboard shown while the analysis request is in flight. */
 export function LoadingSkeleton() {
+  const label = useStagedLabel(STAGES);
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10" aria-busy="true">
       <p
         role="status"
+        aria-live="polite"
         className="mb-8 text-center text-sm text-gray-600 dark:text-night-muted"
       >
-        Scanning via the GitHub API &mdash; fetching only AI-artifact files, no clone.
+        {label}
       </p>
 
       <div className="grid gap-4 md:grid-cols-[220px_1fr]">

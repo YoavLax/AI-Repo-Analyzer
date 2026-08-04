@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyze, ApiError, version, type AnalyzeRequest, type PlatformFilter, type Report } from "./api";
+import AuraBackground from "./components/AuraBackground";
 import ErrorState from "./components/ErrorState";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import ReportView from "./components/ReportView";
@@ -137,7 +138,8 @@ export function App() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col">
+    <div className="relative flex min-h-screen flex-col overflow-hidden">
+      {state.status !== "loading" && <AuraBackground />}
       <div className="absolute right-4 top-4">
         <ThemeToggle theme={theme} onToggle={toggle} />
       </div>
