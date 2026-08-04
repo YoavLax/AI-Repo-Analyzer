@@ -112,7 +112,7 @@ jobs:
       contents: read
     environment:
       name: production
-      url: https://ai-repo-analyzer.fly.dev
+      url: https://agent-compass.fly.dev
     steps:
       - uses: actions/checkout@v4
 
@@ -128,14 +128,14 @@ jobs:
           # fly.toml runs min_machines_running = 0, so the first request after a
           # release wakes a machine — retry rather than assuming it is warm.
           for _ in $(seq 1 30); do
-            if curl -fsS https://ai-repo-analyzer.fly.dev/api/health >/dev/null 2>&1; then
+            if curl -fsS https://agent-compass.fly.dev/api/health >/dev/null 2>&1; then
               ok=1; break
             fi
             sleep 2
           done
           test "$ok" = 1
-          curl -fsS https://ai-repo-analyzer.fly.dev/ | grep -qi agentcompass
-          version=$(curl -fsS https://ai-repo-analyzer.fly.dev/api/version)
+          curl -fsS https://agent-compass.fly.dev/ | grep -qi agentcompass
+          version=$(curl -fsS https://agent-compass.fly.dev/api/version)
           echo "deployed: $version"
           # Guards against a release that silently served a stale image.
           echo "$version" | grep -q "$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)"
