@@ -143,10 +143,27 @@ curl -s http://localhost:8080/api/health   # {"status":"ok"}
 
 ## Fly.io: continuous deployment from `main`
 
-[`fly.toml`](../fly.toml) configures the hosted deployment (app
-`ai-repo-analyzer`, region `fra`, 1 vCPU / 1 GB). It scales to zero
-(`min_machines_running = 0`) and wakes on the first request, so an idle
-deployment costs nothing.
+[`fly.toml`](../fly.toml) configures the hosted deployment: region `fra`,
+1 vCPU / 1 GB, scaling to zero (`min_machines_running = 0`) and waking on the
+first request, so an idle deployment costs nothing.
+
+**The `app` key in `fly.toml` is the single source of truth for which Fly app
+this repository deploys to.** `flyctl` reads it automatically for every command
+run from the repository root, and the CI deploy job derives the public URL
+(`https://<app>.fly.dev`) from it. Nothing else restates the name — a literal
+copy elsewhere drifts, and a drifted copy produces a deploy that "succeeds"
+while the smoke test probes a hostname that does not exist.
+
+To point the deployment at a different Fly app, change that one line. Fly app
+names are immutable, so switching means creating the new app first:
+
+```sh
+flyctl apps create <new-name>
+# set app = '<new-name>' in fly.toml, then:
+flyctl deploy --remote-only
+flyctl secrets set GITHUB_TOKEN=ghp_yourtoken
+flyctl apps destroy <old-name>          # only once the new one serves traffic
+```
 
 The `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 releases every push to `main` automatically. It runs only after **all** other
@@ -159,11 +176,16 @@ release that silently kept serving the previous image).
 
 ### One-time setup
 
+Run these from the repository root so `flyctl` picks up `fly.toml`.
+
 1. Create a Fly deploy token:
 
    ```sh
-   flyctl tokens create deploy --app ai-repo-analyzer --name github-actions
+   flyctl tokens create deploy --name github-actions
    ```
+
+   Paste the **whole** value, including the leading `FlyV1 ` and the space
+   after it — that prefix is part of the token, not a label.
 
 2. Add it as the repository secret `FLY_API_TOKEN`
    (*Settings → Secrets and variables → Actions → New repository secret*), or:
@@ -176,7 +198,7 @@ release that silently kept serving the previous image).
    a build one, so it belongs on Fly rather than in Actions:
 
    ```sh
-   flyctl secrets set GITHUB_TOKEN=ghp_yourtoken --app ai-repo-analyzer
+   flyctl secrets set GITHUB_TOKEN=ghp_yourtoken
    ```
 
    For public repositories this token needs **no scopes at all**; an unscoped
@@ -191,8 +213,8 @@ touching the workflow.
 
 ```sh
 flyctl deploy --remote-only          # build on Fly's builders
-flyctl logs --app ai-repo-analyzer
-flyctl status --app ai-repo-analyzer
+flyctl logs
+flyctl status
 ```
 
 ## Configuration reference

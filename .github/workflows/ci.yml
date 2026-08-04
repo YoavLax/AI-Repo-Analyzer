@@ -112,11 +112,26 @@ jobs:
       contents: read
     environment:
       name: production
-      url: https://agent-compass.fly.dev
+      # Derived below rather than written out: a literal here drifted from
+      # fly.toml once already, and the deploy still "succeeded" while the smoke
+      # test probed a hostname that did not exist.
+      url: ${{ steps.target.outputs.url }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Resolve the deploy target from fly.toml
+        id: target
+        run: |
+          # fly.toml's `app` is the single source of truth — it is what
+          # `flyctl deploy` actually deploys to, so everything downstream must
+          # be derived from it rather than restated.
+          app=$(sed -n "s/^app *= *['\"]\(.*\)['\"].*/\1/p" fly.toml | head -1)
+          test -n "$app" || { echo "::error::no 'app' key in fly.toml"; exit 1; }
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "url=https://$app.fly.dev" >> "$GITHUB_OUTPUT"
+          echo "deploying to $app (https://$app.fly.dev)"
 
       - name: Deploy
         env:
@@ -124,18 +139,25 @@ jobs:
         run: flyctl deploy --remote-only --wait-timeout 300
 
       - name: Smoke-test the deployed release
+        env:
+          APP_URL: ${{ steps.target.outputs.url }}
         run: |
           # fly.toml runs min_machines_running = 0, so the first request after a
           # release wakes a machine — retry rather than assuming it is warm.
           for _ in $(seq 1 30); do
-            if curl -fsS https://agent-compass.fly.dev/api/health >/dev/null 2>&1; then
+            if curl -fsS "$APP_URL/api/health" >/dev/null 2>&1; then
               ok=1; break
             fi
             sleep 2
           done
-          test "$ok" = 1
-          curl -fsS https://agent-compass.fly.dev/ | grep -qi agentcompass
-          version=$(curl -fsS https://agent-compass.fly.dev/api/version)
+          if [ "$ok" != 1 ]; then
+            echo "::error::$APP_URL/api/health never became reachable."
+            echo "If you renamed the Fly app, update 'app' in fly.toml — that is"
+            echo "what flyctl deploys to, and what this check is derived from."
+            exit 1
+          fi
+          curl -fsS "$APP_URL/" | grep -qi agentcompass
+          version=$(curl -fsS "$APP_URL/api/version")
           echo "deployed: $version"
           # Guards against a release that silently served a stale image.
           echo "$version" | grep -q "$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)"
