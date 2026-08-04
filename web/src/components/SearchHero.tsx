@@ -5,6 +5,12 @@ import PlatformToggle from "./PlatformToggle";
 
 const EXAMPLES = ["vercel/next.js", "facebook/react", "YoavLax/AI-Repo-Analyzer"];
 
+const TRUST_STATS: Array<[string, string]> = [
+  ["104", "deterministic rules"],
+  ["0", "clone required"],
+  ["No", "signup"],
+];
+
 type InputMode = "github" | "local";
 
 interface SearchHeroProps {
@@ -29,10 +35,26 @@ export function SearchHero({ localMode, onAnalyze }: SearchHeroProps) {
   return (
     <section className="flex flex-col items-center gap-8 text-center">
       <Logo size={64} withTagline />
-      <p className="max-w-xl text-base text-gray-600 dark:text-night-muted">
-        Score any public GitHub repo&rsquo;s readiness for Copilot &amp; Claude Code &mdash;
-        deterministic checks, concrete fixes, no clone, no signup.
-      </p>
+      <div className="flex flex-col items-center gap-4">
+        <h1 className="max-w-2xl text-3xl font-bold tracking-tight text-gray-900 dark:text-night-text sm:text-4xl">
+          Is your repo ready for <span className="text-gradient">AI agents</span>?
+        </h1>
+        <p className="max-w-xl text-base text-gray-600 dark:text-night-muted">
+          Score any public GitHub repo&rsquo;s readiness for Copilot &amp; Claude Code &mdash;
+          deterministic checks, concrete fixes, no clone, no signup.
+        </p>
+        <dl className="flex flex-wrap items-center justify-center gap-2">
+          {TRUST_STATS.map(([value, label]) => (
+            <div
+              key={label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white/70 px-3 py-1 text-xs dark:border-night-border dark:bg-night-card/70"
+            >
+              <dt className="font-semibold text-primary-700 dark:text-primary-400">{value}</dt>
+              <dd className="text-gray-500 dark:text-night-muted">{label}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
 
       {localMode && (
         <div
