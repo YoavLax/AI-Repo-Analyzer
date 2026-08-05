@@ -131,48 +131,90 @@ jobs:
       contents: read
     environment:
       name: production
-      # Derived below rather than written out: a literal here drifted from
-      # fly.toml once already, and the deploy still "succeeded" while the smoke
-      # test probed a hostname that did not exist.
+      # Derived below rather than written out: a hardcoded literal drifted from
+      # the real deploy target once already, and the deploy still "succeeded"
+      # while the smoke test probed a hostname that did not exist.
       url: ${{ steps.target.outputs.url }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Resolve the deploy target from fly.toml
+      - name: Resolve the Space and its URL
         id: target
-        run: |
-          # fly.toml's `app` is the single source of truth — it is what
-          # `flyctl deploy` actually deploys to, so everything downstream must
-          # be derived from it rather than restated.
-          app=$(sed -n "s/^app *= *['\"]\(.*\)['\"].*/\1/p" fly.toml | head -1)
-          test -n "$app" || { echo "::error::no 'app' key in fly.toml"; exit 1; }
-          echo "app=$app" >> "$GITHUB_OUTPUT"
-          echo "url=https://$app.fly.dev" >> "$GITHUB_OUTPUT"
-          echo "deploying to $app (https://$app.fly.dev)"
-
-      - name: Deploy
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: flyctl deploy --remote-only --wait-timeout 300
+          # Repository variable (not a secret) — e.g. "YoavLax/agent-compass".
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          if [ -z "$HF_SPACE" ]; then
+            echo "::error::Repository variable HF_SPACE is unset."
+            echo "Set it to '<owner>/<space-name>' under Settings -> Secrets and"
+            echo "variables -> Actions -> Variables. See deploy/README.md."
+            exit 1
+          fi
+          owner=${HF_SPACE%%/*}
+          name=${HF_SPACE#*/}
+          # Spaces are served from https://<owner>-<name>.hf.space, lowercased
+          # with every non-alphanumeric run collapsed to a single dash.
+          slug=$(printf '%s-%s' "$owner" "$name" \
+            | tr '[:upper:]' '[:lower:]' \
+            | tr -c 'a-z0-9' '-' \
+            | sed 's/-\{2,\}/-/g; s/^-//; s/-$//')
+          {
+            echo "owner=$owner"
+            echo "name=$name"
+            echo "url=https://$slug.hf.space"
+          } >> "$GITHUB_OUTPUT"
+          echo "deploying $HF_SPACE -> https://$slug.hf.space"
+
+      - name: Build the Space README
+        run: |
+          # Spaces take their configuration from README.md frontmatter, which
+          # would render as noise at the top of the repository's own README.
+          # The header is kept separately and prepended only for the artifact
+          # pushed to the Space, so `app_port` and the repo README have exactly
+          # one home each.
+          cat deploy/huggingface/space-header.md README.md > README.space.md
+          mv README.space.md README.md
+          grep -q '^app_port: 8080$' README.md || {
+            echo "::error::space-header.md must declare 'app_port: 8080' —"
+            echo "Spaces default to 7860 and the container listens on 8080."
+            exit 1
+          }
+
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          OWNER: ${{ steps.target.outputs.owner }}
+          NAME: ${{ steps.target.outputs.name }}
+        run: |
+          test -n "$HF_TOKEN" || { echo "::error::secret HF_TOKEN is unset."; exit 1; }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git commit -m "release ${GITHUB_SHA}"
+          # The Space repository is a build artifact, never a source of truth,
+          # so its history is replaced wholesale on every release.
+          git push --force \
+            "https://user:${HF_TOKEN}@huggingface.co/spaces/${OWNER}/${NAME}" \
+            HEAD:refs/heads/main
 
       - name: Smoke-test the deployed release
         env:
           APP_URL: ${{ steps.target.outputs.url }}
         run: |
-          # fly.toml runs min_machines_running = 0, so the first request after a
-          # release wakes a machine — retry rather than assuming it is warm.
-          for _ in $(seq 1 30); do
+          # A Space rebuilds its image from scratch on push, so this waits far
+          # longer than a container swap would: up to 15 minutes, and a free
+          # Space that had gone to sleep also has to cold-start.
+          for _ in $(seq 1 90); do
             if curl -fsS "$APP_URL/api/health" >/dev/null 2>&1; then
               ok=1; break
             fi
-            sleep 2
+            sleep 10
           done
           if [ "$ok" != 1 ]; then
             echo "::error::$APP_URL/api/health never became reachable."
-            echo "If you renamed the Fly app, update 'app' in fly.toml — that is"
-            echo "what flyctl deploys to, and what this check is derived from."
+            echo "Check the Space's build logs. Most common causes: app_port in"
+            echo "deploy/huggingface/space-header.md does not match the port the"
+            echo "container listens on, or the Docker build itself failed."
             exit 1
           fi
           curl -fsS "$APP_URL/" | grep -qi agentcompass
