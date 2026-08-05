@@ -9,8 +9,8 @@ contract, first) and the v0.2.0 architecture in
 ## Development setup
 
 ```bash
-git clone https://github.com/YoavLax/AI-Repo-Analyzer.git
-cd AI-Repo-Analyzer
+git clone https://github.com/YoavLax/agent-compass.git
+cd agent-compass
 python -m venv .venv
 # Windows
 .venv\Scripts\activate

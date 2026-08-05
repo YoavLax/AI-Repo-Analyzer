@@ -6,7 +6,7 @@ If you discover a security vulnerability in AI Readiness Analyzer, please
 **do not open a public GitHub issue**. Instead, report it privately using one
 of these channels:
 
-1. [GitHub Security Advisories](https://github.com/YoavLax/AI-Repo-Analyzer/security/advisories/new)
+1. [GitHub Security Advisories](https://github.com/YoavLax/agent-compass/security/advisories/new)
    for this repository (preferred).
 2. Email **yoavfax@gmail.com** with a description of the issue, steps to
    reproduce, and its potential impact.

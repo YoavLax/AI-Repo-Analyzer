@@ -4,7 +4,10 @@ version = "0.3.0"
 description = "Deterministic AI-readiness scorer for GitHub Copilot and Claude Code repository configuration."
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "Yoav Lax", email = "yoavfax@gmail.com" }]
+authors = [
+    { name = "Yoav Lax", email = "yoavfax@gmail.com" },
+    { name = "Bechor Simhaev" },
+]
 requires-python = ">=3.11"
 keywords = [
     "ai-agents", "github-copilot", "claude-code", "agent-skills",
@@ -32,10 +35,10 @@ web = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 dev = ["pytest>=7.4", "fastapi>=0.110", "uvicorn[standard]>=0.29", "httpx>=0.27"]
 
 [project.urls]
-Homepage = "https://github.com/YoavLax/AI-Repo-Analyzer"
-Repository = "https://github.com/YoavLax/AI-Repo-Analyzer"
-Issues = "https://github.com/YoavLax/AI-Repo-Analyzer/issues"
-Changelog = "https://github.com/YoavLax/AI-Repo-Analyzer/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/YoavLax/agent-compass"
+Repository = "https://github.com/YoavLax/agent-compass"
+Issues = "https://github.com/YoavLax/agent-compass/issues"
+Changelog = "https://github.com/YoavLax/agent-compass/blob/main/CHANGELOG.md"
 
 [project.scripts]
 airx = "airx.cli:_run"

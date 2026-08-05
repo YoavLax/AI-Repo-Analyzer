@@ -3,6 +3,7 @@ import type { AnalyzeRequest, ApiError, PlatformFilter, Report } from "../api";
 import { formatDelta, formatScore, shortSha } from "../format";
 import type { Theme } from "../theme";
 import ErrorState from "./ErrorState";
+import ExportForAgentButton from "./ExportForAgentButton";
 import FindingsTable from "./FindingsTable";
 import Logo from "./Logo";
 import PillarTable from "./PillarTable";
@@ -192,6 +193,8 @@ export function ReportView({
           ) : null}
         </p>
 
+        <ExportForAgentButton report={report} />
+
         <PillarTable pillars={report.pillars} />
         <TopFixes plan={report.remediation_plan} />
         <FindingsTable findings={report.findings} />
@@ -200,6 +203,52 @@ export function ReportView({
         <footer className="pt-4 text-center text-xs text-gray-400 dark:text-gray-500">
           AgentCompass {report.tool_version} &middot; ruleset {report.ruleset_version} &middot;
           schema {report.schema_version}
+          <br />
+          Built by{" "}
+          <a
+            href="https://github.com/YoavLax"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:underline"
+          >
+            Yoav Lax
+          </a>{" "}
+          (
+          <a
+            href="https://www.linkedin.com/in/yoav-lax-2127b9189/"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:underline"
+          >
+            LinkedIn
+          </a>
+          ) &amp;{" "}
+          <a
+            href="https://github.com/bechor25"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:underline"
+          >
+            Bechor Simhaev
+          </a>{" "}
+          (
+          <a
+            href="https://www.linkedin.com/in/bechor-simhaev/"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:underline"
+          >
+            LinkedIn
+          </a>
+          ) &middot;{" "}
+          <a
+            href="https://github.com/YoavLax/agent-compass"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="hover:underline"
+          >
+            source on GitHub
+          </a>
         </footer>
       </main>
     </div>

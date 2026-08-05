@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { analyze, ApiError, version, type AnalyzeRequest, type PlatformFilter, type Report } from "./api";
 import AuraBackground from "./components/AuraBackground";
+import CoreTeam from "./components/CoreTeam";
 import ErrorState from "./components/ErrorState";
 import LoadingSkeleton from "./components/LoadingSkeleton";
 import ReportView from "./components/ReportView";
@@ -150,6 +151,7 @@ export function App() {
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
           <SearchHero localMode={localMode} onAnalyze={runAnalysis} />
           {state.status === "error" && state.error && <ErrorState error={state.error} />}
+          <CoreTeam />
         </div>
       )}
     </div>

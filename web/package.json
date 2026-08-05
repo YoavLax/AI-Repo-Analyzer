@@ -3,6 +3,16 @@
   "private": true,
   "version": "0.3.0",
   "type": "module",
+  "author": {
+    "name": "Yoav Lax",
+    "url": "https://github.com/YoavLax"
+  },
+  "contributors": [
+    {
+      "name": "Bechor Simhaev",
+      "url": "https://github.com/bechor25"
+    }
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

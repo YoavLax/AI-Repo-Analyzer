@@ -58,7 +58,7 @@ def to_sarif(index: ArtifactIndex, card: ScoreCard) -> str:
                     "driver": {
                         "name": "airx",
                         "version": __version__,
-                        "informationUri": "https://github.com/YoavLax/AI-Repo-Analyzer",
+                        "informationUri": "https://github.com/YoavLax/agent-compass",
                         "rules": driver_rules,
                     }
                 },
