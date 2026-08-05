@@ -1,0 +1,20 @@
+web/src/components/CoreTeam.tsx
+  s_8dc3b52e9b279c::t_a5e8b50ec41b9a 87-89
+  s_8dc3b52e9b279c::t_dbc54af9a76e30 86,90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "7e346ed86d37323b4ccb69897148a7a511ce68d9",
+  "prompts": {},
+  "sessions": {
+    "s_8dc3b52e9b279c": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "4f688ec2-10d7-4728-a2b4-2bec8067ebc1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
