@@ -137,9 +137,11 @@ jobs:
       url: ${{ steps.target.outputs.url }}
     env:
       RENDER_API: https://api.render.com/v1
-      # Not a secret: `srv-...` identifies the service but grants nothing. Keeping
-      # it readable lets a failed deploy say which service it tried to release.
-      SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      # Held as a secret, so Actions masks it everywhere it would be printed.
+      # Diagnostics below therefore identify the service by the name and URL
+      # read back from the API rather than by echoing this id, which would only
+      # ever render as `***`.
+      SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -149,7 +151,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
         run: |
           if [ -z "$SERVICE_ID" ] || [ -z "$RENDER_API_KEY" ]; then
-            echo "::error::RENDER_SERVICE_ID (variable) and RENDER_API_KEY (secret) must both be set."
+            echo "::error::Repository secrets RENDER_SERVICE_ID and RENDER_API_KEY must both be set."
             echo "See deploy/README.md for where to find them."
             exit 1
           fi
@@ -159,7 +161,12 @@ jobs:
           svc=$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" \
             "$RENDER_API/services/$SERVICE_ID")
           url=$(printf '%s' "$svc" | jq -r '.serviceDetails.url // empty')
-          test -n "$url" || { echo "::error::service $SERVICE_ID has no URL; is it a web service?"; exit 1; }
+          test -n "$url" || {
+            echo "::error::RENDER_SERVICE_ID resolved to a service with no URL."
+            echo "Only web services have one — check the id is the srv-... of the"
+            echo "web service and not a worker, cron job, or private service."
+            exit 1
+          }
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "deploying $(printf '%s' "$svc" | jq -r .name) -> $url"
 
