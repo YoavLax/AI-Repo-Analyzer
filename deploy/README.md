@@ -181,14 +181,16 @@ gate would be decorative.
 3. Tell CI which service to release, in the GitHub repository's
    *Settings → Secrets and variables → Actions*:
 
-   | Kind | Name | Where to find it |
-   | --- | --- | --- |
-   | Variable | `RENDER_SERVICE_ID` | the `srv-...` id in the service's dashboard URL |
-   | Secret | `RENDER_API_KEY` | <https://dashboard.render.com/u/settings#api-keys> |
+   Both are **repository secrets** (*Secrets* tab, not *Variables*):
 
-   `RENDER_SERVICE_ID` is a variable rather than a secret deliberately: it
-   identifies the service but grants nothing, and keeping it readable lets a
-   failed deploy report which service it tried to release.
+   | Name | Where to find it |
+   | --- | --- |
+   | `RENDER_SERVICE_ID` | the `srv-...` id in the service's dashboard URL |
+   | `RENDER_API_KEY` | <https://dashboard.render.com/u/settings#api-keys> |
+
+   Actions masks secret values everywhere they would be printed, so the deploy
+   job identifies the service in its output by the name and URL it reads back
+   from the API — echoing the id would only ever render as `***`.
 
 ### How the deploy is verified
 
