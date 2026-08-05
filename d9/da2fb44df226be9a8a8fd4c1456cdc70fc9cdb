@@ -1,0 +1,24 @@
+web/src/components/ReportView.tsx
+  s_fd5306efe81436::t_90b8501b888149 6,197
+  s_fd5306efe81436::t_8b8bea18230c6c 196
+web/src/agentExport.ts
+  s_fd5306efe81436::t_8f26bfa9d33ff5 1-180
+web/src/components/ExportForAgentButton.tsx
+  s_fd5306efe81436::t_015316ed803398 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "d9da2fb44df226be9a8a8fd4c1456cdc70fc9cdb",
+  "prompts": {},
+  "sessions": {
+    "s_fd5306efe81436": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "d9604ef9-9b20-4512-af0a-cadccdc1b409",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
