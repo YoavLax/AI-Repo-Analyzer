@@ -1,0 +1,127 @@
+name: 'AI Readiness Analyzer'
+description: >-
+  Score a repository's AI-agent readiness for GitHub Copilot / Claude Code
+  (skills, instructions, agents, safety) and gate CI on the result.
+author: 'Yoav Lax'
+branding:
+  icon: 'check-circle'
+  color: 'purple'
+
+inputs:
+  path:
+    description: >-
+      What to analyze: a local path (relative to GITHUB_WORKSPACE, default
+      "."), a git clone URL, or a GitHub "owner/repo" shorthand.
+    required: false
+    default: '.'
+  ref:
+    description: 'Branch, tag, or commit to check out when "path" is a remote repository.'
+    required: false
+    default: ''
+  profile:
+    description: 'Weight profile: minimal, standard, enterprise.'
+    required: false
+    default: 'standard'
+  platform:
+    description: 'Restrict scoring to one platform: copilot, claude, all.'
+    required: false
+    default: 'all'
+  min-score:
+    description: 'Fail the step when the overall score is below N (0-100).'
+    required: false
+    default: ''
+  fail-on:
+    description: 'Severity gate: error, warning, never.'
+    required: false
+    default: 'error'
+  format:
+    description: 'Report format written to "output": terminal, json, md, sarif.'
+    required: false
+    default: 'terminal'
+  output:
+    description: 'File path to also save the rendered report to (optional).'
+    required: false
+    default: ''
+  job-summary:
+    description: 'Append a Markdown report to the GitHub Actions job summary.'
+    required: false
+    default: 'true'
+  python-version:
+    description: 'Python version used to run the analyzer.'
+    required: false
+    default: '3.12'
+
+outputs:
+  score:
+    description: 'Overall AI-readiness score (0-100).'
+    value: ${{ steps.analyze.outputs.score }}
+  grade:
+    description: 'Letter grade for the overall score.'
+    value: ${{ steps.analyze.outputs.grade }}
+  exit-code:
+    description: 'airx analyze exit code (0 pass, 1 gate failed, 2 input error).'
+    value: ${{ steps.analyze.outputs.exit-code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install ai-repo-analyzer (pinned to this action's ref)
+      shell: bash
+      # github.action_path is this repo checked out at whatever ref/tag the
+      # caller pinned in `uses:` — installing from it means no separate
+      # package publish is required to consume a given version of the action.
+      run: python -m pip install --disable-pip-version-check --quiet "${{ github.action_path }}"
+
+    - name: Run airx analyze
+      id: analyze
+      shell: bash
+      run: |
+        set +e
+        min_score_args=()
+        if [ -n "${{ inputs.min-score }}" ]; then
+          min_score_args=(--min-score "${{ inputs.min-score }}")
+        fi
+        ref_args=()
+        if [ -n "${{ inputs.ref }}" ]; then
+          ref_args=(--ref "${{ inputs.ref }}")
+        fi
+        output_args=()
+        if [ -n "${{ inputs.output }}" ]; then
+          output_args=(-o "${{ inputs.output }}")
+        fi
+
+        # Render the report format the caller asked for and let its exit
+        # code drive this step's (and therefore the job's) pass/fail.
+        airx analyze "${{ inputs.path }}" \
+          --profile "${{ inputs.profile }}" \
+          --platform "${{ inputs.platform }}" \
+          --fail-on "${{ inputs.fail-on }}" \
+          --format "${{ inputs.format }}" \
+          "${ref_args[@]}" "${output_args[@]}" "${min_score_args[@]}"
+        code=$?
+
+        # Independent, non-gating JSON pass to expose score/grade as step
+        # outputs and (optionally) populate the job summary — never fails
+        # the step itself, since the gate above already determined that.
+        json=$(airx analyze "${{ inputs.path }}" \
+          --profile "${{ inputs.profile }}" \
+          --platform "${{ inputs.platform }}" \
+          --format json --fail-on never "${ref_args[@]}")
+        score=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['overall'])")
+        grade=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['grade'])")
+        echo "score=$score" >> "$GITHUB_OUTPUT"
+        echo "grade=$grade" >> "$GITHUB_OUTPUT"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+        if [ "${{ inputs.job-summary }}" = "true" ] && [ -n "$GITHUB_STEP_SUMMARY" ]; then
+          airx analyze "${{ inputs.path }}" \
+            --profile "${{ inputs.profile }}" \
+            --platform "${{ inputs.platform }}" \
+            --format md --fail-on never "${ref_args[@]}" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        exit "$code"

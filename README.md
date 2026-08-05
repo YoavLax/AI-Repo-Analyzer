@@ -266,11 +266,32 @@ after analysis.
 with collapsible sections (pillars, findings by severity, top fixes, waivers,
 inventory) — default path `airx-report.html` when no `FILE` is given.
 
+## GitHub Action
+
+Run the analyzer in CI without publishing or installing anything yourself —
+the composite action installs `ai-repo-analyzer` straight from the pinned
+`uses:` ref, so a tag (e.g. `@v1`) is the only version contract:
+
+```yaml
+- uses: actions/checkout@v4
+- uses: YoavLax/AI-Repo-Analyzer@v1
+  with:
+    path: .              # default: "."
+    profile: standard    # minimal | standard | enterprise
+    fail-on: error        # error | warning | never
+    min-score: 70         # optional overall-score gate
+```
+
+Outputs: `score`, `grade`, `exit-code`. A Markdown report is also written to
+the job summary by default (`job-summary: false` to disable). The step's
+exit code mirrors `airx analyze`'s own gate (§8.4), so a failing score turns
+the job red the same way a failing test would.
+
 ## Not yet implemented
 
-The composite GitHub Action, `airx fix`, duplication detection,
-and nested-monorepo aggregation — see [`plan.md`](plan.md) §12 and
-[`plan-v2-fable.md`](plan-v2-fable.md) §1 for sequencing.
+`airx fix`, duplication detection, and nested-monorepo aggregation — see
+[`plan.md`](plan.md) §12 and [`plan-v2-fable.md`](plan-v2-fable.md) §1 for
+sequencing.
 
 ## Contributing
 
