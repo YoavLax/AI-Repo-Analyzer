@@ -1,6 +1,11 @@
 ---
 name: build-e2e-platform
-description: 'Build and run the AgentCompass platform locally (Docker Compose) for end-to-end testing, wiring up GITHUB_TOKEN so live GitHub analyses avoid the 60 req/h anonymous rate limit. Use for "run e2e tests", "spin up the platform locally", "test against docker", "verify live analyze endpoint", "rebuild agentcompass container", "set GITHUB_TOKEN for testing".'
+description: >-
+  Builds and rebuilds the containerized AgentCompass platform (Docker
+  Compose) for end-to-end testing, configuring GITHUB_TOKEN to avoid
+  GitHub's 60 req/hour anonymous rate limit. Use this skill when running
+  e2e tests, testing the live /api/analyze endpoint, or rebuilding the
+  container. Trigger when GitHub rate limits appear during manual testing.
 ---
 
 # Build the AgentCompass platform locally for e2e testing
