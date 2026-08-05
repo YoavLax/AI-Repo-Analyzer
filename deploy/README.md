@@ -141,81 +141,108 @@ kubectl port-forward svc/agentcompass 8080:80
 curl -s http://localhost:8080/api/health   # {"status":"ok"}
 ```
 
-## Fly.io: continuous deployment from `main`
+## Render: continuous deployment from `main`
 
-[`fly.toml`](../fly.toml) configures the hosted deployment: region `fra`,
-1 vCPU / 1 GB, scaling to zero (`min_machines_running = 0`) and waking on the
-first request, so an idle deployment costs nothing.
-
-**The `app` key in `fly.toml` is the single source of truth for which Fly app
-this repository deploys to.** `flyctl` reads it automatically for every command
-run from the repository root, and the CI deploy job derives the public URL
-(`https://<app>.fly.dev`) from it. Nothing else restates the name — a literal
-copy elsewhere drifts, and a drifted copy produces a deploy that "succeeds"
-while the smoke test probes a hostname that does not exist.
-
-To point the deployment at a different Fly app, change that one line. Fly app
-names are immutable, so switching means creating the new app first:
-
-```sh
-flyctl apps create <new-name>
-# set app = '<new-name>' in fly.toml, then:
-flyctl deploy --remote-only
-flyctl secrets set GITHUB_TOKEN=ghp_yourtoken
-flyctl apps destroy <old-name>          # only once the new one serves traffic
-```
+[`render.yaml`](../render.yaml) declares the hosted deployment as a Render
+Blueprint: a free Docker web service built from this repository's existing
+Dockerfile. The service is stateless, so there is no database, disk, or volume
+to declare.
 
 The `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
-releases every push to `main` automatically. It runs only after **all** other
-CI jobs pass — the full test matrix, the frontend build, the Docker image
-smoke test, the Helm lint, and the dogfood run — so a green test matrix alone
-cannot ship a broken frontend or an unbuildable image. After `flyctl deploy`
-it re-checks the live release: `/api/health`, the served SPA, and that
-`/api/version` reports the version in `pyproject.toml` (which catches a
-release that silently kept serving the previous image).
+releases every push to `main`. It runs only after **all** other CI jobs pass —
+the full test matrix, the frontend build, the Docker image smoke test, the Helm
+lint, the dogfood run, and the action self-test — so a green test matrix alone
+cannot ship a broken frontend or an unbuildable image.
+
+`autoDeploy: false` in the blueprint is what makes that gate real. With
+Render's own auto-deploy left on, a push would release immediately and the CI
+gate would be decorative.
 
 ### One-time setup
 
-Run these from the repository root so `flyctl` picks up `fly.toml`.
+1. Create the service at <https://dashboard.render.com/select-repo?type=blueprint>,
+   pointing it at this repository. Render reads `render.yaml` and creates the
+   web service from it. A free account is enough; no payment details are
+   required.
 
-1. Create a Fly deploy token:
+2. Add the runtime GitHub token in the service's *Environment* tab:
 
-   ```sh
-   flyctl tokens create deploy --name github-actions
+   ```
+   GITHUB_TOKEN = ghp_yourtoken
    ```
 
-   Paste the **whole** value, including the leading `FlyV1 ` and the space
-   after it — that prefix is part of the token, not a label.
+   This is a **runtime** secret — the server reads `GITHUB_TOKEN` from its
+   environment on every request — so it belongs on Render, not in Actions. For
+   public repositories it needs **no scopes at all**; an unscoped token still
+   raises the GitHub API limit from 60 to 5,000 requests/hour and can do
+   nothing else if it leaks. Without it the API answers `429` as soon as the
+   shared unauthenticated budget runs out.
 
-2. Add it as the repository secret `FLY_API_TOKEN`
-   (*Settings → Secrets and variables → Actions → New repository secret*), or:
+3. Tell CI which service to release, in the GitHub repository's
+   *Settings → Secrets and variables → Actions*:
 
-   ```sh
-   gh secret set FLY_API_TOKEN --app actions
-   ```
+   | Kind | Name | Where to find it |
+   | --- | --- | --- |
+   | Variable | `RENDER_SERVICE_ID` | the `srv-...` id in the service's dashboard URL |
+   | Secret | `RENDER_API_KEY` | <https://dashboard.render.com/u/settings#api-keys> |
 
-3. Set the GitHub API token on the app itself — it is a **runtime** secret, not
-   a build one, so it belongs on Fly rather than in Actions:
+   `RENDER_SERVICE_ID` is a variable rather than a secret deliberately: it
+   identifies the service but grants nothing, and keeping it readable lets a
+   failed deploy report which service it tried to release.
 
-   ```sh
-   flyctl secrets set GITHUB_TOKEN=ghp_yourtoken
-   ```
+### How the deploy is verified
 
-   For public repositories this token needs **no scopes at all**; an unscoped
-   token still raises the GitHub API limit from 60 to 5,000 requests/hour, and
-   cannot do anything else if it leaks.
+Render keeps serving the previous build until the new one is healthy. Polling
+`/api/health` straight after triggering a release would therefore pass against
+the release being *replaced* — a deploy that failed to build would look
+successful.
 
-The job declares the `production` GitHub environment, so a required reviewer
-can be added there later to gate releases behind manual approval without
-touching the workflow.
+So the job uses Render's API rather than a deploy hook: it creates a deploy,
+gets back that deploy's id, and polls **that specific deploy** until it reports
+`live`, failing loudly on `build_failed`, `update_failed`, `pre_deploy_failed`,
+`canceled`, or `deactivated`. Only then does it smoke-test the URL — which it
+reads back from the API too, because Render assigns the hostname and appends a
+suffix when a name is already taken, so it cannot be derived from the
+blueprint.
 
-### Manual release
+### The `PORT` contract
 
-```sh
-flyctl deploy --remote-only          # build on Fly's builders
-flyctl logs
-flyctl status
+Render assigns the port and passes it as `$PORT`. The image honours it:
+
+```dockerfile
+ENV PORT=8080
+CMD ["sh", "-c", "exec uvicorn airx_server.app:app --host 0.0.0.0 --port \"${PORT:-8080}\""]
 ```
+
+The default keeps Docker Compose, the Helm chart, and the CI smoke tests
+working unchanged, and `exec` keeps uvicorn as PID 1 so `SIGTERM` reaches it
+directly instead of the platform waiting out its kill timeout. A container that
+ignored `$PORT` would build fine on Render and then never answer, so the smoke
+test names this as the first thing to check.
+
+### What a free instance is
+
+| | |
+| --- | --- |
+| Resources | 0.1 CPU, 512 MB RAM |
+| Sleep | after 15 min idle; the next request wakes it in 30-60 s |
+| Quota | 750 instance-hours/month |
+| Cost | none, and no card on file |
+
+0.1 CPU is the real constraint. Analysis is CPU-bound, so `render.yaml` pins
+`MAX_CONCURRENT_ANALYSES=1`: admitting several at once on a tenth of a core
+makes each slower without finishing any sooner, and risks the memory ceiling.
+Expect a single analysis to take appreciably longer than it does locally.
+
+### Deploying somewhere else instead
+
+Nothing in the application is Render-specific — it is one stateless container
+that honours `$PORT` and reads `GITHUB_TOKEN`. Google Cloud Run is the natural
+step up if 0.1 CPU or the sleep behaviour becomes a problem: its free tier is
+perpetual rather than a trial (2M requests, 180k vCPU-seconds, 360k GiB-seconds
+per month) and `gcloud run deploy --source .` uses this same Dockerfile, but it
+requires a billing account and the free tier only applies in US regions.
+Kubernetes is covered by the Helm chart above.
 
 ## Configuration reference
 

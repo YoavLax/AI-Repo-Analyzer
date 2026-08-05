@@ -30,14 +30,21 @@ RUN pip install --no-cache-dir ".[web]"
 # Built SPA from stage 1; served by airx_server via STATIC_DIR.
 COPY --from=web /app/web/dist /opt/agentcompass/static
 
+# PORT is honoured rather than hardcoded so the same image runs unchanged on
+# hosts that assign the port themselves (Render, Cloud Run, Heroku-style
+# platforms). It defaults to 8080, which is what docker-compose, the Helm
+# chart, and the CI smoke tests expect.
 ENV STATIC_DIR=/opt/agentcompass/static \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=3)"
+    CMD python -c "import os,urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ.get('PORT','8080')}/api/health\", timeout=3)"
 
 USER app
 
-CMD ["uvicorn", "airx_server.app:app", "--host", "0.0.0.0", "--port", "8080"]
+# `exec` keeps uvicorn as PID 1 so SIGTERM reaches it directly and the platform
+# gets a clean shutdown instead of waiting out its kill timeout.
+CMD ["sh", "-c", "exec uvicorn airx_server.app:app --host 0.0.0.0 --port \"${PORT:-8080}\""]
