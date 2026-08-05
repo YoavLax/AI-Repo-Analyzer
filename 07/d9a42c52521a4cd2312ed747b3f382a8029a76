@@ -1,0 +1,23 @@
+README.md
+  s_a7a2659b3eb237::t_8079e4cf33fad2 269-289,292-294
+.github/workflows/ci.yml
+  s_a7a2659b3eb237::t_6754ba7dbe8c9a 96-114,120
+action.yml
+  s_a7a2659b3eb237::t_bf5c7068ce839f 1-127
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "07d9a42c52521a4cd2312ed747b3f382a8029a76",
+  "prompts": {},
+  "sessions": {
+    "s_a7a2659b3eb237": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "077a3e8a-e003-4f61-9315-fd18e5c3e34a",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
