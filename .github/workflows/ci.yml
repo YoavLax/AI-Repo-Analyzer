@@ -93,12 +93,31 @@ jobs:
           airx rules --format md > /tmp/RULES.md
           diff -u docs/RULES.md /tmp/RULES.md
 
+  action-selftest:
+    name: Composite Action self-test (uses ./ against this repo)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run this repo's own composite action against itself
+        id: airx
+        uses: ./
+        with:
+          fail-on: never
+          format: json
+      - name: Verify outputs were produced
+        shell: bash
+        run: |
+          test -n "${{ steps.airx.outputs.score }}" || { echo "::error::score output was empty"; exit 1; }
+          test -n "${{ steps.airx.outputs.grade }}" || { echo "::error::grade output was empty"; exit 1; }
+          echo "score=${{ steps.airx.outputs.score }} grade=${{ steps.airx.outputs.grade }}"
+
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
     # Every other job, not just `test`: a green matrix with a broken frontend
     # build or an unbuildable image must never reach production.
-    needs: [test, web, docker, helm, dogfood]
+    needs: [test, web, docker, helm, dogfood, action-selftest]
     # Pushes to main only. `pull_request` runs share this workflow, and a PR
     # from a fork would otherwise deploy unreviewed code with the production
     # token.
