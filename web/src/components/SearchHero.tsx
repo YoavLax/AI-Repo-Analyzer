@@ -3,7 +3,7 @@ import type { AnalyzeRequest, PlatformFilter } from "../api";
 import Logo from "./Logo";
 import PlatformToggle from "./PlatformToggle";
 
-const EXAMPLES = ["vercel/next.js", "facebook/react", "YoavLax/AI-Repo-Analyzer"];
+const EXAMPLES = ["vercel/next.js", "facebook/react", "YoavLax/agent-compass"];
 
 const TRUST_STATS: Array<[string, string]> = [
   ["104", "deterministic rules"],

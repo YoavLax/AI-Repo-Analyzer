@@ -7,7 +7,7 @@ ranked list of concrete fixes — computed entirely by static analysis, with
 zero model calls in the scoring path. Same commit in, byte-identical report
 out, every time.
 
-[![CI](https://github.com/YoavLax/AI-Repo-Analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/YoavLax/AI-Repo-Analyzer/actions/workflows/ci.yml)
+[![CI](https://github.com/YoavLax/agent-compass/actions/workflows/ci.yml/badge.svg)](https://github.com/YoavLax/agent-compass/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 
@@ -53,8 +53,8 @@ Eight pillars, 104 rules ([full catalog](docs/RULES.md)):
 ## Quickstart
 
 ```bash
-git clone https://github.com/YoavLax/AI-Repo-Analyzer.git
-cd AI-Repo-Analyzer
+git clone https://github.com/YoavLax/agent-compass.git
+cd agent-compass
 python -m venv .venv
 # Windows: .venv\Scripts\activate   |   macOS/Linux: source .venv/bin/activate
 pip install -e .
@@ -67,8 +67,8 @@ git clone URL (`https://`, `ssh://`, `git@host:...`). It's shallow-cloned to a
 temp directory for the analysis and removed afterwards; requires `git` on PATH.
 
 ```bash
-airx analyze YoavLax/AI-Repo-Analyzer
-airx analyze https://github.com/YoavLax/AI-Repo-Analyzer.git --ref main
+airx analyze YoavLax/agent-compass
+airx analyze https://github.com/YoavLax/agent-compass.git --ref main
 ```
 
 ```
@@ -282,6 +282,49 @@ determinism contract, which every rule must preserve.
 See [`SECURITY.md`](SECURITY.md) for the threat model and how to report a
 vulnerability.
 
+## Core Team
+
+<table>
+  <tr>
+    <th align="center">Author</th>
+    <th align="center">Author</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/YoavLax">
+        <img src="https://github.com/YoavLax.png" width="110" height="110" style="border-radius:50%" alt="Yoav Lax"/>
+      </a>
+      <br/>
+      <sub><b>@YoavLax</b></sub>
+      <br/><br/>
+      <a href="https://github.com/YoavLax">
+        <img alt="GitHub" src="https://img.shields.io/badge/GITHUB-181717?style=for-the-badge&logo=github&logoColor=white"/>
+      </a>
+      <br/>
+      <a href="https://www.linkedin.com/in/yoav-lax-2127b9189/">
+        <img alt="LinkedIn" src="https://img.shields.io/badge/LINKEDIN-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white"/>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/bechor25">
+        <img src="https://github.com/bechor25.png" width="110" height="110" style="border-radius:50%" alt="Bechor Simhaev"/>
+      </a>
+      <br/>
+      <sub><b>@bechor25</b></sub>
+      <br/><br/>
+      <a href="https://github.com/bechor25">
+        <img alt="GitHub" src="https://img.shields.io/badge/GITHUB-181717?style=for-the-badge&logo=github&logoColor=white"/>
+      </a>
+      <br/>
+      <a href="https://www.linkedin.com/in/bechor-simhaev/">
+        <img alt="LinkedIn" src="https://img.shields.io/badge/LINKEDIN-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white"/>
+      </a>
+    </td>
+  </tr>
+</table>
+
+[![Repo](https://img.shields.io/badge/source-agent--compass-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/YoavLax/agent-compass)
+
 ## Credits
 
 The `SKILL.md` validation rules and their thresholds are vendored from
@@ -294,4 +337,4 @@ and [GitHub Copilot's custom-instructions guidance](https://github.blog/ai-and-m
 
 ## License
 
-[MIT](LICENSE) © 2026 Yoav Lax
+[MIT](LICENSE) © 2026 Yoav Lax, Bechor Simhaev

@@ -120,7 +120,7 @@ def load(root: Path) -> AirxConfig | None:
 
 
 INIT_TEMPLATE = """\
-# AI Readiness Analyzer configuration (https://github.com/YoavLax/AI-Repo-Analyzer)
+# AI Readiness Analyzer configuration (https://github.com/YoavLax/agent-compass)
 version: 1
 
 # Weight profile: standard | minimal | enterprise

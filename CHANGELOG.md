@@ -255,4 +255,4 @@ reporters; waivers; platform sub-scores and parity delta — all shipped in
 0.2.0. Still open: HTML report, the GitHub Action, and `airx fix` (see
 `plan.md` §12 and `plan-v2-fable.md` §1).
 
-[Unreleased]: https://github.com/YoavLax/AI-Repo-Analyzer/commits/main
+[Unreleased]: https://github.com/YoavLax/agent-compass/commits/main
