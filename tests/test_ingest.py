@@ -189,68 +189,94 @@ def test_truncated_tree_is_rejected(tmp_path):
     assert exc.value.status == 413
 
 
-def test_max_fetch_files_is_configurable(tmp_path):
-    """Self-hosted deployments can raise (or lower) the online-scan artifact-file
-    cap via `max_fetch_files` (wired to the `MAX_FETCH_FILES` env var)."""
-    with pytest.raises(IngestError) as exc:
-        fetch_snapshot(
-            RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=1,
+def _oversize(fetcher, path, size):
+    """Make the tree listing report `path` as `size` bytes."""
+    original = fetcher.get_json
+
+    def patched(url):
+        data = original(url)
+        if "git/trees" in url:
+            for entry in data["tree"]:
+                if entry["path"] == path:
+                    entry["size"] = size
+        return data
+
+    fetcher.get_json = patched
+    return fetcher
+
+
+def test_max_fetch_files_spends_a_budget_rather_than_refusing(tmp_path):
+    """The file cap is a budget, not a cliff: a repository that does not fit is
+    still analyzed, with the shortfall recorded instead of aborting."""
+    tree, stats = fetch_snapshot(
+        RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=1,
+    )
+    assert stats.fetched_files == 1
+    assert {s.reason for s in stats.skipped} == {"file-count"}
+    assert stats.fetched_files + len(stats.skipped) == len(select_paths(tree.files))
+
+    # The one file it could afford is a classified artifact, not a bulky extra
+    # that happens to sort first.
+    kept = [p for p in select_paths(tree.files) if (tmp_path / str(p)).exists()]
+    assert kept == [PurePosixPath(".github/copilot-instructions.md")]
+
+    # A generous cap fetches everything and records nothing.
+    other = tmp_path / "full"
+    other.mkdir()
+    _, full = fetch_snapshot(
+        RemoteRepo("o", "r"), other, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=10_000,
+    )
+    assert full.skipped == ()
+
+
+def test_oversized_file_is_skipped_not_fatal(tmp_path):
+    """One outsized artifact (a generated icon script, a sample dataset) used to
+    abort the whole analysis. It is now left out and disclosed."""
+    fetcher = _oversize(FakeFetcher(dict(REPO_FILES)), "CLAUDE.md", 3 * 1024 * 1024)
+    tree, stats = fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=fetcher)
+
+    assert [(s.path.as_posix(), s.reason) for s in stats.skipped] == [("CLAUDE.md", "file-size")]
+    assert not (tmp_path / "CLAUDE.md").exists()
+    # Everything else still made it, so the report is partial rather than absent.
+    assert (tmp_path / ".github/copilot-instructions.md").is_file()
+
+    # Raising the cap restores it.
+    other = tmp_path / "raised"
+    other.mkdir()
+    _, raised = fetch_snapshot(
+        RemoteRepo("o", "r"), other,
+        fetcher=_oversize(FakeFetcher(dict(REPO_FILES)), "CLAUDE.md", 3 * 1024 * 1024),
+        max_file_bytes=4 * 1024 * 1024,
+    )
+    assert raised.skipped == ()
+
+
+def test_total_size_budget_is_spent_by_priority(tmp_path):
+    """When the total budget runs out, bulky material inside a skill directory
+    goes before the Markdown the pillars are scored on."""
+    files = dict(REPO_FILES)
+    fetcher = _oversize(FakeFetcher(files), ".github/skills/deploy/scripts/run.sh", 900)
+    tree, stats = fetch_snapshot(
+        RemoteRepo("o", "r"), tmp_path, fetcher=fetcher, max_total_bytes=1000,
+    )
+    skipped = {s.path.as_posix() for s in stats.skipped}
+    assert ".github/skills/deploy/scripts/run.sh" in skipped
+    assert ".github/skills/deploy/SKILL.md" not in skipped, "SKILL.md outranks its assets"
+
+
+def test_skip_records_are_deterministic(tmp_path):
+    """The skip set is a pure function of the pinned listing, so two runs of the
+    same commit agree — a partial scan must still be reproducible (D1)."""
+    runs = []
+    for name in ("a", "b"):
+        target = tmp_path / name
+        target.mkdir()
+        _, stats = fetch_snapshot(
+            RemoteRepo("o", "r"), target, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=3,
         )
-    assert exc.value.status == 413
-    assert "limit 1" in exc.value.user_message
-
-    # A generous cap lets the same repository through.
-    tree, _ = fetch_snapshot(
-        RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(REPO_FILES), max_fetch_files=10_000,
-    )
-    assert tree.root.exists()
-
-
-def test_max_file_bytes_is_configurable(tmp_path):
-    """A per-file size cap that would reject a real artifact (e.g. a large
-    generated icon script) can be raised via `max_file_bytes`
-    (`MAX_FILE_BYTES` env var)."""
-    files = dict(REPO_FILES)
-    fetcher = FakeFetcher(files)
-    original = fetcher.get_json
-
-    def patched(url):
-        data = original(url)
-        if "git/trees" in url:
-            for entry in data["tree"]:
-                if entry["path"] == "CLAUDE.md":
-                    entry["size"] = 3 * 1024 * 1024
-        return data
-
-    fetcher.get_json = patched
-
-    with pytest.raises(IngestError) as exc:
-        fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=fetcher)
-    assert exc.value.status == 413
-
-    tree, _ = fetch_snapshot(
-        RemoteRepo("o", "r"), tmp_path, fetcher=fetcher, max_file_bytes=4 * 1024 * 1024,
-    )
-    assert tree.root.exists()
-
-
-def test_oversized_artifact_is_rejected(tmp_path):
-    files = dict(REPO_FILES)
-    fetcher = FakeFetcher(files)
-    original = fetcher.get_json
-
-    def patched(url):
-        data = original(url)
-        if "git/trees" in url:
-            for entry in data["tree"]:
-                if entry["path"] == "CLAUDE.md":
-                    entry["size"] = 3 * 1024 * 1024
-        return data
-
-    fetcher.get_json = patched
-    with pytest.raises(IngestError) as exc:
-        fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=fetcher)
-    assert exc.value.status == 413
+        runs.append([(s.path.as_posix(), s.reason) for s in stats.skipped])
+    assert runs[0] == runs[1]
+    assert runs[0] == sorted(runs[0]), "skips are reported in stable path order"
 
 
 def test_http_errors_map_to_user_messages(tmp_path):

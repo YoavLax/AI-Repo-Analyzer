@@ -246,6 +246,40 @@ per month) and `gcloud run deploy --source .` uses this same Dockerfile, but it
 requires a billing account and the free tier only applies in US regions.
 Kubernetes is covered by the Helm chart above.
 
+## Fetch budgets
+
+The three `MAX_*` settings below bound what a single online scan costs the
+server. They are spent as a **budget**, not enforced as a cliff: a repository
+that does not fit is still analyzed, using the budget on the artifacts that
+carry the most signal, and the report says what it had to leave out.
+
+Priority order, highest first:
+
+1. classified artifacts — `SKILL.md`, `CLAUDE.md`, agents, commands, hooks, MCP
+2. root probe files — `package.json`, `Makefile`, `.airx.yml`, `.gitignore`
+3. everything else inside a skill directory — scripts, assets, sample data
+
+So when `github/awesome-copilot` (1134 selectable files, one 2.05 MB icon
+script) is scanned at the stock 400-file budget, the 400 it spends cover 394 of
+its 400 skills; what it drops is bulk. Every dropped file is reported:
+
+```
+This online scan skipped 1052 files beyond the per-repository file limit
+(MAX_FETCH_FILES), so the score reflects less of the repository than a local
+analysis would: .gitignore, CODE_OF_CONDUCT.md, ... and 1047 more. Raise that
+limit on the deployment, or analyze a local clone via local-path mode, for a
+complete result.
+```
+
+`meta.skipped_files` carries the count for programmatic callers. When nothing
+is skipped — the overwhelming majority of repositories — there is no caveat and
+the snapshot is exactly what a full checkout would have produced.
+
+Raising a limit is therefore a tuning decision about completeness versus server
+cost, not a prerequisite for the scan to work at all. The one failure that
+remains fatal is a tree listing GitHub itself refuses to return in full, which
+no setting can widen.
+
 ## Configuration reference
 
 | Environment variable | Default | Purpose |
@@ -255,6 +289,6 @@ Kubernetes is covered by the Helm chart above.
 | `LOCAL_REPOS_ROOT` | unset | Root directory local paths are confined to |
 | `STATIC_DIR` | `/opt/agentcompass/static` (image) | Location of the built SPA |
 | `MAX_CONCURRENT_ANALYSES` | `4` | Concurrent analysis cap per replica |
-| `MAX_FETCH_FILES` | `400` | Online-scan cap on classified AI-artifact files fetched per repository; raise it to analyze larger repos without local-path mode |
+| `MAX_FETCH_FILES` | `400` | Online-scan budget for files fetched per repository |
 | `MAX_FILE_BYTES` | `2097152` (2 MB) | Online-scan per-file size cap, in bytes |
 | `MAX_TOTAL_BYTES` | `20971520` (20 MB) | Online-scan total fetch-size cap, in bytes |
