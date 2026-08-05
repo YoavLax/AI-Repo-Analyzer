@@ -16,9 +16,11 @@ suite never touches the network, and only two hosts are ever contacted:
 from __future__ import annotations
 
 import concurrent.futures
+import http.client
 import json
 import os
 import re
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -32,6 +34,7 @@ from airx.patterns import classify
 
 API_HOST = "https://api.github.com"
 RAW_HOST = "https://raw.githubusercontent.com"
+_RAW_NETLOC = "raw.githubusercontent.com"
 
 MAX_FETCH_FILES = 400
 MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -40,9 +43,13 @@ MAX_TOTAL_BYTES = 20 * 1024 * 1024
 #: bounded, but far above the per-file cap.
 MAX_API_RESPONSE_BYTES = 64 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 30
-#: Parallel raw-file fetches. Bounded to stay well inside GitHub's abuse
-#: limits while turning dozens of sequential round trips into a few batches.
-FETCH_CONCURRENCY = 8
+#: Parallel raw-file fetches. Raw-file retrieval is latency-bound, not
+#: CPU-bound — a worker waiting on a socket costs no CPU — so this is set well
+#: above the core count on purpose, and helps just as much on a fractional-CPU
+#: instance as on a full core. Still bounded to stay inside GitHub's abuse
+#: limits, and each worker now reuses one connection (see `UrllibFetcher`), so
+#: raising it adds sockets rather than TLS handshakes.
+FETCH_CONCURRENCY = 16
 
 #: Files probe.py reads by content; everything else it derives from names.
 #: `.airx.yml` is included so a web analysis honors the same repository
@@ -152,6 +159,12 @@ class UrllibFetcher:
         #: max_file_bytes, or a raised fetch_snapshot() cap is silently
         #: re-clamped back down to the module default at the HTTP layer.
         self._max_file_bytes = max_file_bytes
+        #: One keep-alive connection per fetch worker. `urlopen` opens (and
+        #: TLS-handshakes) a fresh connection per call, which dominates the
+        #: wall clock once a snapshot needs hundreds of small files: measured
+        #: on github/awesome-copilot, 1134 files took 56.8s, of which almost
+        #: all was handshakes rather than transfer.
+        self._local = threading.local()
 
     def _open(self, url: str, accept: str):
         if not url.startswith((API_HOST + "/", RAW_HOST + "/")):
@@ -178,9 +191,78 @@ class UrllibFetcher:
         with self._open(url, "application/vnd.github+json") as response:
             return json.loads(self._read_capped(response, MAX_API_RESPONSE_BYTES).decode("utf-8"))
 
+    def _drop_pooled(self) -> None:
+        connection = getattr(self._local, "conn", None)
+        self._local.conn = None
+        if connection is not None:
+            try:
+                connection.close()
+            except OSError:
+                pass
+
+    def _pooled_get_raw(self, url: str) -> bytes | None:
+        """Fetch over this worker's reused connection to raw.githubusercontent.com.
+
+        Returns None — rather than raising — for anything the audited
+        `_open` path should handle instead: a redirect, a non-200 status, or a
+        connection that went stale between uses. The caller then retries
+        through `_open`, so redirect containment, error mapping, and the host
+        allowlist all keep their single implementation. Only the plain
+        200-with-a-body case is served from the pool.
+
+        The request line carries only the path; the host is fixed to
+        `raw.githubusercontent.com` by construction, so this path cannot be
+        steered off GitHub.
+        """
+        connection = getattr(self._local, "conn", None)
+        if connection is None:
+            connection = http.client.HTTPSConnection(
+                _RAW_NETLOC, timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            self._local.conn = connection
+        try:
+            connection.request(
+                "GET", url[len(RAW_HOST):],
+                headers={"User-Agent": "agentcompass", "Accept": "*/*",
+                         "Connection": "keep-alive"},
+            )
+            response = connection.getresponse()
+            if response.status != 200:
+                # Drain so the connection stays reusable, then let `_open`
+                # produce the real error or follow the redirect.
+                response.read()
+                return None
+            return self._read_capped(response, self._max_file_bytes)
+        except IngestError:
+            # An over-cap body leaves the connection mid-response; it cannot be
+            # reused, and the error is the caller's to see.
+            self._drop_pooled()
+            raise
+        except (http.client.HTTPException, OSError):
+            # Keep-alive connections are closed by the server eventually. A
+            # dropped socket is expected, not exceptional — discard it and let
+            # the caller retry on a fresh one.
+            self._drop_pooled()
+            return None
+
     def get_raw(self, url: str) -> bytes:
+        if url.startswith(RAW_HOST + "/"):
+            content = self._pooled_get_raw(url)
+            if content is not None:
+                return content
         with self._open(url, "*/*") as response:
             return self._read_capped(response, self._max_file_bytes)
+
+    def close(self) -> None:
+        """Release the calling thread's pooled connection.
+
+        Not called by `fetch_snapshot`: a connection lives in the worker
+        thread's locals, so only that thread could close it, and the pool's
+        threads are torn down with the executor at the end of the snapshot —
+        at which point the connections are collected with their thread-local
+        storage. Provided for callers that drive `get_raw` themselves.
+        """
+        self._drop_pooled()
 
 
 def _map_http_error(exc: urllib.error.HTTPError, remote: RemoteRepo) -> IngestError:

@@ -604,3 +604,101 @@ def test_command_frontmatter_still_accepts_the_documented_invocation_schema(tmp_
     satisfaction, diags = agents_rules.check_commands_frontmatter_valid(index)
     assert satisfaction == 1.0
     assert diags == []
+
+
+# --- ingest connection reuse ------------------------------------------------
+
+def test_pooled_raw_fetch_falls_back_for_anything_but_a_plain_200():
+    """The keep-alive fast path serves only `200` with a body. Redirects,
+    errors, and dropped sockets defer to the audited `_open` path so redirect
+    containment, host allowlisting, and error mapping keep one implementation.
+    """
+    import http.client
+
+    from airx.ingest import RAW_HOST, UrllibFetcher
+
+    fetcher = UrllibFetcher(token=None)
+    url = f"{RAW_HOST}/o/r/{'a' * 40}/README.md"
+
+    class Response:
+        def __init__(self, status):
+            self.status = status
+            self.drained = False
+
+        def read(self, *args):
+            self.drained = True
+            return b""
+
+    class Connection:
+        def __init__(self, status=None, error=None):
+            self.status, self.error, self.response = status, error, None
+
+        def request(self, *args, **kwargs):
+            if self.error is not None:
+                raise self.error
+
+        def getresponse(self):
+            self.response = Response(self.status)
+            return self.response
+
+        def close(self):
+            pass
+
+    # A redirect defers rather than being followed here.
+    redirect = Connection(status=302)
+    fetcher._local.conn = redirect
+    assert fetcher._pooled_get_raw(url) is None
+    assert redirect.response.drained, "a deferred response must be drained for reuse"
+
+    # A dropped keep-alive connection defers and is discarded, not raised.
+    fetcher._local.conn = Connection(error=http.client.RemoteDisconnected("bye"))
+    assert fetcher._pooled_get_raw(url) is None
+    assert getattr(fetcher._local, "conn", None) is None, "a broken socket must not be kept"
+
+
+def test_pooled_fetch_reuses_one_connection_per_thread():
+    """The whole point: N files must not mean N TLS handshakes."""
+    from airx.ingest import RAW_HOST, UrllibFetcher
+
+    created: list[object] = []
+
+    class Response:
+        status = 200
+
+        def read(self, *args):
+            return b"body"
+
+    class Connection:
+        def __init__(self, *args, **kwargs):
+            created.append(self)
+
+        def request(self, *args, **kwargs):
+            pass
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    import airx.ingest as ingest
+
+    original = ingest.http.client.HTTPSConnection
+    ingest.http.client.HTTPSConnection = Connection
+    try:
+        fetcher = UrllibFetcher(token=None)
+        for i in range(25):
+            assert fetcher.get_raw(f"{RAW_HOST}/o/r/{'a' * 40}/f{i}.md") == b"body"
+    finally:
+        ingest.http.client.HTTPSConnection = original
+
+    assert len(created) == 1, f"expected one pooled connection, opened {len(created)}"
+
+
+def test_pooled_path_never_leaves_github():
+    """`get_raw` must still refuse a non-GitHub URL — the fast path is entered
+    only for RAW_HOST, and everything else goes through the allowlist check."""
+    from airx.ingest import IngestError, UrllibFetcher
+
+    with pytest.raises(IngestError):
+        UrllibFetcher(token=None).get_raw("https://evil.test/o/r/README.md")
