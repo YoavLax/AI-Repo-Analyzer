@@ -15,6 +15,8 @@ from airx.discovery import build_index
 from airx.ingest import (
     Fetcher,
     IngestError,
+    SKIP_REASONS,
+    SkippedFile,
     parse_github_url,
     fetch_snapshot,
     MAX_FETCH_FILES,
@@ -32,6 +34,37 @@ class ServiceError(Exception):
         super().__init__(message)
         self.message = message
         self.status = status
+
+
+#: How many skipped paths to name before summarizing the rest. Enough to act
+#: on, few enough that a pathological repository cannot flood the report.
+_SKIP_SAMPLE = 5
+
+
+def _skip_caveats(skipped: tuple[SkippedFile, ...]) -> list[str]:
+    """One caveat per budget that was hit, naming the files it cost.
+
+    Grouped by reason rather than one line per file: an operator's next action
+    is to raise a specific limit, and that decision is per budget.
+    """
+    if not skipped:
+        return []
+    caveats: list[str] = []
+    for reason, explanation in SKIP_REASONS.items():
+        paths = [s.path.as_posix() for s in skipped if s.reason == reason]
+        if not paths:
+            continue
+        shown = ", ".join(paths[:_SKIP_SAMPLE])
+        if len(paths) > _SKIP_SAMPLE:
+            shown += f", and {len(paths) - _SKIP_SAMPLE} more"
+        noun = "file" if len(paths) == 1 else "files"
+        caveats.append(
+            f"This online scan skipped {len(paths)} {noun} {explanation}, so the score "
+            f"reflects less of the repository than a local analysis would: {shown}. "
+            "Raise that limit on the deployment, or analyze a local clone via "
+            "local-path mode, for a complete result."
+        )
+    return caveats
 
 
 def _analyze_tree(tree: fs.RepoTree, platform: Platform | None = None) -> dict:
@@ -89,9 +122,14 @@ def analyze_remote(
         "listed_files": stats.listed_files,
         "fetched_files": stats.fetched_files,
         "fetched_bytes": stats.fetched_bytes,
+        "skipped_files": len(stats.skipped),
         "duration_ms": int((time.monotonic() - started) * 1000),
         "mode": "online-scan",
     }
+    # A partial scan still produces a useful report, but the caller has to be
+    # told — silently scoring a subset as though it were the whole repository
+    # is the one outcome worse than refusing outright.
+    report["caveats"] = list(report["caveats"]) + _skip_caveats(stats.skipped)
     # The report's target root is an ephemeral temp dir — meaningless to the
     # caller and non-deterministic; replace it with the repo identity.
     report["target"] = {"root": f"github.com/{remote.owner}/{remote.repo}"}

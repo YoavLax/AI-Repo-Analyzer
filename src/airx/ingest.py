@@ -85,12 +85,33 @@ class RemoteRepo:
     ref: str | None = None
 
 
+#: Why a selected file was left out of the snapshot. Each maps to one of the
+#: fetch budgets, so the report can name the setting an operator would raise.
+#: Phrased as noun modifiers ("skipped 1 file over ...", "skipped 12 files
+#: over ...") so one template reads correctly for any count.
+SKIP_REASONS: dict[str, str] = {
+    "file-size": "over the per-file size limit (MAX_FILE_BYTES)",
+    "file-count": "beyond the per-repository file limit (MAX_FETCH_FILES)",
+    "total-size": "beyond the total fetch size limit (MAX_TOTAL_BYTES)",
+}
+
+
+@dataclass(frozen=True)
+class SkippedFile:
+    path: PurePosixPath
+    reason: str  # a key of SKIP_REASONS
+
+
 @dataclass(frozen=True)
 class SnapshotStats:
     listed_files: int
     fetched_files: int
     fetched_bytes: int
     resolved_sha: str
+    #: Files the rules would have read had the budget allowed. Empty for the
+    #: overwhelming majority of repositories, in which case the snapshot is
+    #: exactly what a full checkout would have produced.
+    skipped: tuple[SkippedFile, ...] = ()
 
 
 def parse_github_url(text: str) -> RemoteRepo | None:
@@ -316,22 +337,51 @@ def _safe_rel_path(raw: str) -> PurePosixPath | None:
     return path
 
 
+#: Selection tiers, most important first. A fetch budget is spent tier by tier,
+#: so when a repository does not fit, what gets dropped is the bulky material
+#: inside a skill directory (icon sets, sample data, images) rather than the
+#: Markdown the pillars are actually scored on.
+TIER_ARTIFACT = 0   # classified artifacts: SKILL.md, CLAUDE.md, agents, hooks...
+TIER_PROBE = 1      # root probe files: package.json, Makefile, .airx.yml...
+TIER_SKILL_EXTRA = 2  # anything else living under a skill directory
+
+
 def select_paths(files: tuple[PurePosixPath, ...]) -> tuple[PurePosixPath, ...]:
     """The subset of the listing whose *contents* the rules read: classified
-    artifacts, probe content files, and everything inside a skill directory."""
+    artifacts, probe content files, and everything inside a skill directory.
+
+    Sorted by path. `_ranked_selection` returns the same set ordered by
+    priority instead, which is what a constrained fetch spends its budget in.
+    """
+    return tuple(sorted(
+        (rel for _, rel in _ranked_selection(files)), key=lambda p: p.as_posix(),
+    ))
+
+
+def _ranked_selection(
+    files: tuple[PurePosixPath, ...],
+) -> tuple[tuple[int, PurePosixPath], ...]:
+    """`select_paths` plus each entry's tier, in stable (tier, path) order.
+
+    The order is what a constrained fetch spends its budget in, so it must be a
+    pure function of the listing — no sizes, no filesystem, no wall clock.
+    """
     skill_dirs = {
         rel.parent for rel in files
         if classify(rel) is not None and rel.name == "SKILL.md"
     }
-    selected: set[PurePosixPath] = set()
+    selected: dict[PurePosixPath, int] = {}
     for rel in files:
         if classify(rel) is not None:
-            selected.add(rel)
+            selected[rel] = TIER_ARTIFACT
         elif len(rel.parts) == 1 and rel.name in PROBE_CONTENT_FILES:
-            selected.add(rel)
+            selected[rel] = TIER_PROBE
         elif any(skill_dir in rel.parents for skill_dir in skill_dirs):
-            selected.add(rel)
-    return tuple(sorted(selected, key=lambda p: p.as_posix()))
+            selected[rel] = TIER_SKILL_EXTRA
+    return tuple(sorted(
+        ((tier, rel) for rel, tier in selected.items()),
+        key=lambda item: (item[0], item[1].as_posix()),
+    ))
 
 
 def _referenced_docs(
@@ -423,24 +473,31 @@ def fetch_snapshot(
             break
     listed.sort(key=lambda p: p.as_posix())
 
-    selected = select_paths(tuple(listed))
-    if len(selected) > max_fetch_files:
-        raise IngestError(
-            f"This repository has {len(selected)} AI-artifact files (limit {max_fetch_files}). "
-            "Self-host AgentCompass and analyze it via local-path mode.",
-            413,
-        )
-    oversized = [p for p in selected if sizes.get(p, 0) > max_file_bytes]
-    if oversized:
-        raise IngestError(
-            f"Artifact file '{oversized[0]}' exceeds the {max_file_bytes // (1024 * 1024)} MB per-file limit.",
-            413,
-        )
-    if sum(sizes.get(p, 0) for p in selected) > max_total_bytes:
-        raise IngestError(
-            f"The AI-artifact set exceeds the {max_total_bytes // (1024 * 1024)} MB total fetch limit.",
-            413,
-        )
+    # The caps are a *budget*, not a cliff. A single oversized icon set used to
+    # abort the whole analysis, which made every large repository a support
+    # question ("raise MAX_FILE_BYTES, now raise MAX_FETCH_FILES, now...") and
+    # left the operator tuning limits per repository. Spending the budget by
+    # priority instead means a repository that does not fit still produces a
+    # report — of the artifacts that matter, with the shortfall disclosed.
+    #
+    # Every decision here is a pure function of the pinned tree listing (paths
+    # and blob sizes), so the fetch set stays deterministic (D1).
+    selected: list[PurePosixPath] = []
+    skipped: list[SkippedFile] = []
+    total_planned = 0
+    for _, rel in _ranked_selection(tuple(listed)):
+        size = sizes.get(rel, 0)
+        if size > max_file_bytes:
+            skipped.append(SkippedFile(rel, "file-size"))
+        elif len(selected) >= max_fetch_files:
+            skipped.append(SkippedFile(rel, "file-count"))
+        elif total_planned + size > max_total_bytes:
+            skipped.append(SkippedFile(rel, "total-size"))
+        else:
+            selected.append(rel)
+            total_planned += size
+    selected.sort(key=lambda p: p.as_posix())
+    skipped.sort(key=lambda s: s.path.as_posix())
 
     workdir = workdir.resolve()
 
@@ -483,29 +540,31 @@ def fetch_snapshot(
                     future.cancel()
                 raise
 
-    _materialize(selected)
+    _materialize(tuple(selected))
 
     # Second pass: the companion Markdown docs linked from the instruction files
     # just fetched. `quality.references.pointers-not-snippets` reads those docs'
     # bytes, so they must exist in the snapshot — otherwise the same commit
     # scores differently in the web app than on the CLI (D3 web/CLI parity).
     # One hop only: the rule never follows a reference of a reference.
-    referenced = _referenced_docs(workdir, selected, set(listed) - set(selected))
-    referenced = tuple(p for p in referenced if sizes.get(p, 0) <= max_file_bytes)
-    if len(selected) + len(referenced) > max_fetch_files:
-        # Fail loudly rather than silently dropping the pass: a partial snapshot
-        # is exactly the divergence this pass exists to prevent.
-        raise IngestError(
-            f"This repository has {len(selected) + len(referenced)} AI-artifact and referenced "
-            f"documentation files (limit {max_fetch_files}). "
-            "Self-host AgentCompass and analyze it via local-path mode.",
-            413,
-        )
-    _materialize(referenced)
+    referenced: list[PurePosixPath] = []
+    for rel in _referenced_docs(workdir, tuple(selected), set(listed) - set(selected)):
+        size = sizes.get(rel, 0)
+        if size > max_file_bytes:
+            skipped.append(SkippedFile(rel, "file-size"))
+        elif len(selected) + len(referenced) >= max_fetch_files:
+            skipped.append(SkippedFile(rel, "file-count"))
+        elif total_planned + size > max_total_bytes:
+            skipped.append(SkippedFile(rel, "total-size"))
+        else:
+            referenced.append(rel)
+            total_planned += size
+    _materialize(tuple(referenced))
+    skipped.sort(key=lambda s: s.path.as_posix())
 
     tree = RepoTree(root=workdir, files=tuple(listed))
     stats = SnapshotStats(
         listed_files=len(listed), fetched_files=len(selected) + len(referenced),
-        fetched_bytes=total, resolved_sha=sha,
+        fetched_bytes=total, resolved_sha=sha, skipped=tuple(skipped),
     )
     return tree, stats

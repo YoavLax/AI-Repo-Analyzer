@@ -45,13 +45,33 @@ def test_analyze_remote_happy_path():
     assert data["meta"]["fetched_files"] < data["meta"]["listed_files"]
 
 
-def test_analyze_remote_honors_configured_max_fetch_files():
-    """MAX_FETCH_FILES is deployment-configurable (env var, wired via Settings)
-    rather than a fixed 400 — a low cap must reject via the same 413 path."""
+def test_analyze_remote_degrades_and_discloses_when_over_budget():
+    """A repository that does not fit the configured budget still returns a
+    report — with the shortfall in `caveats` and counted in `meta`.
+
+    Scoring a subset silently, as though it were the whole repository, is the
+    one outcome worse than refusing outright; refusing outright was the old
+    behaviour and made every large repository a limits-tuning exercise.
+    """
     client = _client(_settings(max_fetch_files=1), fetcher=FakeFetcher(REPO_FILES))
     response = client.post("/api/analyze", json={"source": "o/r"})
-    assert response.status_code == 413
-    assert "limit 1" in response.json()["error"]["message"]
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["score"]["grade"]
+    assert data["meta"]["fetched_files"] == 1
+    assert data["meta"]["skipped_files"] > 0
+    disclosure = [c for c in data["caveats"] if "skipped" in c]
+    assert disclosure, "a partial scan must say so"
+    assert "MAX_FETCH_FILES" in disclosure[0], "name the limit an operator would raise"
+
+
+def test_analyze_remote_reports_no_skip_caveat_when_everything_fits():
+    """The disclosure must be absent on the normal path, or it becomes noise
+    that gets ignored on the one scan where it matters."""
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    data = client.post("/api/analyze", json={"source": "o/r"}).json()
+    assert data["meta"]["skipped_files"] == 0
+    assert not [c for c in data["caveats"] if "skipped" in c]
 
 
 def test_analyze_report_is_deterministic_across_requests():

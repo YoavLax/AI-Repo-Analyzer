@@ -481,18 +481,24 @@ def test_online_scan_never_fetches_unreferenced_source(tmp_path):
 
 
 def test_referenced_doc_pass_respects_the_fetch_file_cap(tmp_path):
-    """Referenced docs count against `max_fetch_files`. Exceeding it must fail
-    loudly — silently dropping the pass would reintroduce the very web/CLI
-    divergence the pass exists to prevent."""
-    from airx.ingest import IngestError, RemoteRepo, fetch_snapshot
+    """Referenced docs are drawn from the same budget as everything else.
+
+    Exceeding it must not silently drop the pass — that would reintroduce the
+    web/CLI divergence the pass exists to prevent — so the shortfall is
+    recorded and surfaces as a caveat.
+    """
+    from airx.ingest import RemoteRepo, fetch_snapshot
     from tests.test_ingest import FakeFetcher
 
-    with pytest.raises(IngestError) as exc:
-        fetch_snapshot(
-            RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(_LINKING_REPO), max_fetch_files=1,
-        )
-    assert exc.value.status == 413
-    assert "limit 1" in exc.value.user_message
+    _, stats = fetch_snapshot(
+        RemoteRepo("o", "r"), tmp_path, fetcher=FakeFetcher(_LINKING_REPO), max_fetch_files=1,
+    )
+    assert stats.fetched_files == 1
+    assert not (tmp_path / "docs" / "ARCH.md").exists()
+    assert any(
+        s.path.as_posix() == "docs/ARCH.md" and s.reason == "file-count"
+        for s in stats.skipped
+    ), "a dropped companion doc must be disclosed, not silently omitted"
 
 
 def test_reference_link_shape_is_shared_between_ingest_and_the_rule():
