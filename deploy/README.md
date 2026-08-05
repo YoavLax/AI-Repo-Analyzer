@@ -141,108 +141,108 @@ kubectl port-forward svc/agentcompass 8080:80
 curl -s http://localhost:8080/api/health   # {"status":"ok"}
 ```
 
-## Hugging Face Spaces: continuous deployment from `main`
+## Render: continuous deployment from `main`
 
-The hosted deployment runs as a Docker Space. The same image the Helm chart and
-Docker Compose use is built by the Space itself, so there is no registry to
-push to and nothing host-specific in the application.
+[`render.yaml`](../render.yaml) declares the hosted deployment as a Render
+Blueprint: a free Docker web service built from this repository's existing
+Dockerfile. The service is stateless, so there is no database, disk, or volume
+to declare.
 
 The `deploy` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 releases every push to `main`. It runs only after **all** other CI jobs pass —
 the full test matrix, the frontend build, the Docker image smoke test, the Helm
 lint, the dogfood run, and the action self-test — so a green test matrix alone
-cannot ship a broken frontend or an unbuildable image. After pushing it polls
-the live Space until `/api/health` answers, and fails with the likely cause if
-it never does.
+cannot ship a broken frontend or an unbuildable image.
+
+`autoDeploy: false` in the blueprint is what makes that gate real. With
+Render's own auto-deploy left on, a push would release immediately and the CI
+gate would be decorative.
 
 ### One-time setup
 
-1. Create the Space at <https://huggingface.co/new-space>. A free account is
-   enough; no payment details are required.
+1. Create the service at <https://dashboard.render.com/select-repo?type=blueprint>,
+   pointing it at this repository. Render reads `render.yaml` and creates the
+   web service from it. A free account is enough; no payment details are
+   required.
 
-   | Field | Value |
-   | --- | --- |
-   | Space name | `agent-compass` |
-   | License | MIT |
-   | SDK | **Docker** → Blank |
-   | Hardware | CPU basic — free |
-   | Visibility | **Public** (free Spaces must be public) |
-
-2. Add the runtime GitHub token in the Space's own
-   *Settings → Variables and secrets*:
+2. Add the runtime GitHub token in the service's *Environment* tab:
 
    ```
    GITHUB_TOKEN = ghp_yourtoken
    ```
 
    This is a **runtime** secret — the server reads `GITHUB_TOKEN` from its
-   environment on every request — so it belongs on the Space, not in Actions.
-   For public repositories it needs **no scopes at all**; an unscoped token
-   still raises the GitHub API limit from 60 to 5,000 requests/hour and can do
+   environment on every request — so it belongs on Render, not in Actions. For
+   public repositories it needs **no scopes at all**; an unscoped token still
+   raises the GitHub API limit from 60 to 5,000 requests/hour and can do
    nothing else if it leaks. Without it the API answers `429` as soon as the
    shared unauthenticated budget runs out.
 
-3. Tell CI where to deploy, in the GitHub repository's
+3. Tell CI which service to release, in the GitHub repository's
    *Settings → Secrets and variables → Actions*:
 
-   | Kind | Name | Value |
+   | Kind | Name | Where to find it |
    | --- | --- | --- |
-   | Variable | `HF_SPACE` | `<owner>/agent-compass` |
-   | Secret | `HF_TOKEN` | a **write**-scoped token from <https://huggingface.co/settings/tokens> |
+   | Variable | `RENDER_SERVICE_ID` | the `srv-...` id in the service's dashboard URL |
+   | Secret | `RENDER_API_KEY` | <https://dashboard.render.com/u/settings#api-keys> |
 
-   `HF_SPACE` is a variable rather than a secret on purpose: it is not
-   sensitive, and keeping it readable means a failed deploy can say which
-   Space it tried to reach.
+   `RENDER_SERVICE_ID` is a variable rather than a secret deliberately: it
+   identifies the service but grants nothing, and keeping it readable lets a
+   failed deploy report which service it tried to release.
 
-### How the Space README is produced
+### How the deploy is verified
 
-A Space takes its configuration from YAML frontmatter in its `README.md`.
-Putting that frontmatter in this repository's README would render as noise at
-the top of the GitHub project page, so it lives in
-[`deploy/huggingface/space-header.md`](huggingface/space-header.md) and is
-prepended to a copy of the README only for the artifact pushed to the Space.
+Render keeps serving the previous build until the new one is healthy. Polling
+`/api/health` straight after triggering a release would therefore pass against
+the release being *replaced* — a deploy that failed to build would look
+successful.
 
-`app_port: 8080` in that header is load-bearing: Spaces default to port 7860,
-the container listens on 8080, and a mismatch produces a Space that builds
-successfully and then never answers. The deploy job asserts it is present
-rather than trusting it.
+So the job uses Render's API rather than a deploy hook: it creates a deploy,
+gets back that deploy's id, and polls **that specific deploy** until it reports
+`live`, failing loudly on `build_failed`, `update_failed`, `pre_deploy_failed`,
+`canceled`, or `deactivated`. Only then does it smoke-test the URL — which it
+reads back from the API too, because Render assigns the hostname and appends a
+suffix when a name is already taken, so it cannot be derived from the
+blueprint.
 
-The Space repository is a build artifact, never a source of truth — each
-release force-pushes over its history. Edit this repository and let CI
-redeploy; changes made in the Space UI are overwritten by the next push.
+### The `PORT` contract
 
-### Manual release
+Render assigns the port and passes it as `$PORT`. The image honours it:
 
-```sh
-pip install -U "huggingface_hub[cli]"
-hf auth login                       # paste a write token
-
-cat deploy/huggingface/space-header.md README.md > /tmp/README.space.md
-git checkout -b space-build
-cp /tmp/README.space.md README.md
-git commit -am "space build"
-git push --force https://huggingface.co/spaces/<owner>/agent-compass space-build:main
-git checkout - && git branch -D space-build
+```dockerfile
+ENV PORT=8080
+CMD ["sh", "-c", "exec uvicorn airx_server.app:app --host 0.0.0.0 --port \"${PORT:-8080}\""]
 ```
 
-### What a free Space does
+The default keeps Docker Compose, the Helm chart, and the CI smoke tests
+working unchanged, and `exec` keeps uvicorn as PID 1 so `SIGTERM` reaches it
+directly instead of the platform waiting out its kill timeout. A container that
+ignored `$PORT` would build fine on Render and then never answer, so the smoke
+test names this as the first thing to check.
+
+### What a free instance is
 
 | | |
 | --- | --- |
-| Hardware | 2 vCPU, 16 GB RAM, 50 GB disk |
-| Sleep | after 48 h idle; the next request wakes it in ~30 s |
-| URL | `https://<owner>-agent-compass.hf.space` |
+| Resources | 0.1 CPU, 512 MB RAM |
+| Sleep | after 15 min idle; the next request wakes it in 30-60 s |
+| Quota | 750 instance-hours/month |
 | Cost | none, and no card on file |
+
+0.1 CPU is the real constraint. Analysis is CPU-bound, so `render.yaml` pins
+`MAX_CONCURRENT_ANALYSES=1`: admitting several at once on a tenth of a core
+makes each slower without finishing any sooner, and risks the memory ceiling.
+Expect a single analysis to take appreciably longer than it does locally.
 
 ### Deploying somewhere else instead
 
-Nothing in the application is Space-specific: it is a single stateless
-container that reads `GITHUB_TOKEN`, `PORT`-equivalent settings, and serves
-both the API and the SPA. Google Cloud Run is the natural next step if the
-Space's sleep behaviour becomes a problem — its free tier is perpetual rather
-than a trial, and `gcloud run deploy --source .` uses the same Dockerfile —
-but it requires a billing account. Kubernetes is covered by the Helm chart
-above.
+Nothing in the application is Render-specific — it is one stateless container
+that honours `$PORT` and reads `GITHUB_TOKEN`. Google Cloud Run is the natural
+step up if 0.1 CPU or the sleep behaviour becomes a problem: its free tier is
+perpetual rather than a trial (2M requests, 180k vCPU-seconds, 360k GiB-seconds
+per month) and `gcloud run deploy --source .` uses this same Dockerfile, but it
+requires a billing account and the free tier only applies in US regions.
+Kubernetes is covered by the Helm chart above.
 
 ## Configuration reference
 
