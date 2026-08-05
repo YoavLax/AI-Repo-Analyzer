@@ -3,6 +3,7 @@ import type { AnalyzeRequest, ApiError, PlatformFilter, Report } from "../api";
 import { formatDelta, formatScore, shortSha } from "../format";
 import type { Theme } from "../theme";
 import ErrorState from "./ErrorState";
+import ExportForAgentButton from "./ExportForAgentButton";
 import FindingsTable from "./FindingsTable";
 import Logo from "./Logo";
 import PillarTable from "./PillarTable";
@@ -191,6 +192,8 @@ export function ReportView({
             </>
           ) : null}
         </p>
+
+        <ExportForAgentButton report={report} />
 
         <PillarTable pillars={report.pillars} />
         <TopFixes plan={report.remediation_plan} />
