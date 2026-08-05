@@ -1,0 +1,52 @@
+web/package.json
+  s_8dc3b52e9b279c::t_1a85e170d60252 6-15
+src/airx/airxfile.py
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 123
+deploy/helm/codecompass/Chart.yaml
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 12
+SECURITY.md
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 9
+web/src/components/SearchHero.tsx
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 6
+web/src/App.tsx
+  s_8dc3b52e9b279c::t_4e196a6d766522 4,154
+CHANGELOG.md
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 258
+web/src/components/ReportView.tsx
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 242
+  s_8dc3b52e9b279c::t_1a85e170d60252 203-241,243-248
+web/src/components/CoreTeam.tsx
+  s_8dc3b52e9b279c::t_1620e8a69dfc46 1-32,34-74,86-90
+  s_8dc3b52e9b279c::t_de4f98179e7b26 79,81-83
+  s_8dc3b52e9b279c::t_1a33f3006cd31d 75-78,80,84-85
+  s_8dc3b52e9b279c::t_7534adac9fa8fd 33
+README.md
+  s_8dc3b52e9b279c::t_1a85e170d60252 286,325,327,340
+  s_8dc3b52e9b279c::t_895b28c79fe50b 10,56-57,70-71,326
+  s_8dc3b52e9b279c::t_d2a06def7304f5 285,287-324
+src/airx/report/sarif.py
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 61
+pyproject.toml
+  s_8dc3b52e9b279c::t_1a85e170d60252 7-10
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 38-41
+deploy/helm/agentcompass/Chart.yaml
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 12
+CONTRIBUTING.md
+  s_8dc3b52e9b279c::t_8c2eb3b02c334c 12-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "e1bfd70d130cc442c5ba26e5d9133763b18d7110",
+  "prompts": {},
+  "sessions": {
+    "s_8dc3b52e9b279c": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "4f688ec2-10d7-4728-a2b4-2bec8067ebc1",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "YoavLax <yoavfax@gmail.com>"
+    }
+  }
+}
