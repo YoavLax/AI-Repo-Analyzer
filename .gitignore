@@ -17,3 +17,6 @@ dist/
 # Personal, machine-local Claude Code files — never commit these.
 CLAUDE.local.md
 .claude/settings.local.json
+
+# scripts/focus-shot.js needs playwright-core installed here.
+node_modules/

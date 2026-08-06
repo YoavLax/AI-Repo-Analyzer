@@ -69,22 +69,34 @@ const matches = (needle) => {
   // hence the scroll above, and the on-screen filter here.
   const box = await page.evaluate(([src, needle]) => {
     const hits = new Function("needle", `return (${src})(needle)`)(needle);
-    let top = Infinity, bottom = -Infinity;
+
+    let top = Infinity, bottom = -Infinity, onScreen = 0;
     for (const el of hits) {
       const r = el.getBoundingClientRect();
       if (r.bottom < 0 || r.top > window.innerHeight) continue;
+      onScreen++;
       top = Math.min(top, r.top);
       bottom = Math.max(bottom, r.bottom);
     }
     if (top === Infinity) return null;
+
+    // Asymmetric padding, because the match is the message cell and a row is
+    // not symmetric around it: the severity pill sits level with the message,
+    // but the file path renders beneath it. Too much headroom slices the row
+    // above in half; too little bottom padding cuts off the path — and the
+    // path is the part a reviewer needs. Climbing to a row container instead
+    // is not an option: the findings list has no per-row element to climb to,
+    // so it lands on the whole section.
+    const PAD_TOP = 12;
+    const PAD_BOTTOM = 62;
     const sr = document.querySelector('section[aria-label="Findings"]').getBoundingClientRect();
-    const y = Math.max(0, top - 70);                       // a little headroom
+    const y = Math.max(0, top - PAD_TOP);
     return {
       x: Math.max(0, sr.left),
       y,
       width: Math.min(sr.width, window.innerWidth - sr.left),
-      height: Math.min(window.innerHeight - y, (bottom - top) + 140),
-      onScreen: hits.length,
+      height: Math.min(window.innerHeight - y, (bottom - top) + PAD_TOP + PAD_BOTTOM),
+      onScreen,
     };
   }, [matches.toString(), NEEDLE]);
 
