@@ -93,13 +93,32 @@ this as `<rule.id>`.
 
 Reproduce it without installing anything: <deep-link>/?repo=<owner>/<name>
 
-<Optional: one cropped screenshot of these findings only — never the whole
-report. Use `scripts/focus-shot.js` to clip to the matching rows.>
+<One cropped screenshot of these findings only — never the whole findings
+table. Use `scripts/focus-shot.js` to clip to the matching rows.>
+
+<The score summary band, `dark-summary.png` from `capture.js`.>
 
 <sub><img src="https://raw.githubusercontent.com/YoavLax/agent-compass/main/agentcompass.png" width="200" alt="AgentCompass"></sub>
 ```
 
 ---
+
+### Two images, both below "How I found it"
+
+**The findings crop** is the evidence: the rows this PR fixes, and nothing else.
+`scripts/focus-shot.js` clips to them.
+
+**The score summary band** is the context: grade, platform scores, findings
+count. It goes immediately after the crop and immediately before the logo.
+
+Position is the whole argument for the second one. A grade at the top of a PR
+on someone else's repository says *we assessed you and here is your mark* — a
+verdict the reader did not ask for, delivered before they have seen the fix. The
+same band under the attribution reads as what the tool produced, which is what
+the section is about. Never move it up, never put it in the `### What` section,
+never mention the number in prose.
+
+Neither image is ever the full report.
 
 ### The logo goes at the bottom, at 200px
 

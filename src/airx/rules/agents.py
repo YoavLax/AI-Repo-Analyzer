@@ -380,10 +380,19 @@ def check_agents_sizing(index: ArtifactIndex):
 # prompt frontmatter
 # =============================================================================
 
+#: Built-in agents a prompt's `agent:` field may name without any agent file
+#: existing. The VS Code prompt-file reference gives `agent:` as "the agent used
+#: for running the prompt: `ask`, `agent`, `plan`, or the name of a custom
+#: agent", and its own worked example is literally `agent: 'agent'`. Treating
+#: these as dangling references reported every correctly-written prompt file in
+#: a repository as broken.
+BUILTIN_AGENTS: frozenset[str] = frozenset({"ask", "agent", "plan"})
+
+
 def _known_agent_names(index: ArtifactIndex) -> frozenset[str]:
-    """Names a prompt's `agent:` field can legitimately reference: each agent
-    file's filename stem plus its frontmatter `name` when it is a string."""
-    names: set[str] = set()
+    """Names a prompt's `agent:` field can legitimately reference: the built-in
+    agents, plus each agent file's filename stem and its frontmatter `name`."""
+    names: set[str] = set(BUILTIN_AGENTS)
     for a in _sorted_artifacts(index.agents):
         names.add(a.rel_path.stem)
         if a.doc is not None:

@@ -481,3 +481,34 @@ def test_mcp_servers_resolve_na_without_field(tmp_path):
         ".claude/agents/planner.md": GOOD_AGENT,
     })
     assert rules.check_agents_mcp_servers_resolve(index) is None
+
+
+# --- prompts.frontmatter.valid: built-in agents (regression) -----------------
+
+def test_prompt_agent_builtin_values_are_not_dangling(tmp_path):
+    """`agent: agent` is the VS Code documentation's own example.
+
+    The field takes `ask`, `agent`, `plan`, or a custom agent's name. Resolving
+    it only against agent *files* reported every correctly-written prompt in a
+    repository as a dangling reference — five of them in affaan-m/ECC, which
+    ships no agent files at all.
+    """
+    files = {
+        f".github/prompts/{b}-demo.prompt.md":
+            f"---\nagent: {b}\ndescription: Demo prompt.\n---\n\n# Demo\n"
+        for b in ("ask", "agent", "plan")
+    }
+    result = rules.check_prompts_frontmatter_valid(_index(tmp_path, files))
+    assert result is not None
+    sat, diags = result
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_prompt_agent_unknown_name_is_still_flagged(tmp_path):
+    sat, diags = rules.check_prompts_frontmatter_valid(_index(tmp_path, {
+        ".github/prompts/x.prompt.md":
+            "---\nagent: no-such-agent\ndescription: Demo prompt.\n---\n\n# Demo\n",
+    }))
+    assert sat == 0.0
+    assert "no-such-agent" in diags[0][1].message
