@@ -20,3 +20,7 @@ CLAUDE.local.md
 
 # scripts/focus-shot.js needs playwright-core installed here.
 node_modules/
+
+# Scratch screenshots for local review — never committed. The images an
+# upstream PR embeds live in docs/img/ instead.
+new/
