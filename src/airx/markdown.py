@@ -15,8 +15,11 @@ import posixpath
 import re
 from pathlib import PurePosixPath
 
-#: A fenced code block, capturing its body.
-CODE_BLOCK_RE = re.compile(r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)\s*$", re.MULTILINE | re.DOTALL)
+#: A fenced code block, capturing its body. The fence markers may carry
+#: leading whitespace (a fence nested under a list item, e.g. "   ```bash",
+#: is still a fence) — matching only column-0 fences left indented examples
+#: unstripped, so their contents were scanned as if they were live prose.
+CODE_BLOCK_RE = re.compile(r"^[ \t]*(?:```|~~~)[^\n]*\n(.*?)^[ \t]*(?:```|~~~)[ \t]*$", re.MULTILINE | re.DOTALL)
 
 #: A *relative* Markdown link target. Absolute (`/x`) and pure `#anchor` links
 #: never match, and neither does anything carrying a URI scheme.
@@ -33,6 +36,13 @@ MD_LINK_RE = re.compile(
 #: Any Markdown link, whatever its target. Used to blank link syntax out of the
 #: text before directive scanning, so a link's URL can never be read as prose.
 ANY_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
+
+#: An ATX heading line ("#" through "######"). A heading is a title/label —
+#: "### Primary Working File: notes.md" names a file the section is *about*,
+#: not a directive to load it — so headings are blanked out before directive
+#: scanning the same way link syntax is, without touching the identical
+#: phrase were it written as ordinary paragraph prose.
+HEADING_LINE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+.*$", re.MULTILINE)
 
 #: A `source:` / `file:` / `include:` directive pointing at a companion file.
 DIRECTIVE_RE = re.compile(
@@ -89,16 +99,19 @@ def extract_references(body: str) -> list[str]:
     """Companion-file references in `body`: relative Markdown links plus
     `source:`/`file:`/`include:` directives, de-duplicated, first-seen order.
 
-    Fenced code blocks and inline code spans are stripped first, link syntax is
-    blanked out before directives are scanned, and targets that do not name a
-    file are dropped (see `strip_code`, `ANY_LINK_RE`, `is_file_like`).
+    Fenced code blocks and inline code spans are stripped first, link syntax
+    and heading lines are blanked out before directives are scanned, and
+    targets that do not name a file are dropped (see `strip_code`,
+    `ANY_LINK_RE`, `HEADING_LINE_RE`, `is_file_like`).
     """
     body = strip_code(body)
     refs: list[str] = []
     refs.extend(MD_LINK_RE.findall(body))
-    # Directives are prose. Scanning link syntax for them reads a link's URL as
-    # if the author had written it as a directive.
-    refs.extend(DIRECTIVE_RE.findall(ANY_LINK_RE.sub(" ", body)))
+    # Directives are paragraph prose. Scanning link syntax for them reads a
+    # link's URL as if the author had written it as a directive, and scanning
+    # heading text reads a section title's own filename mention the same way.
+    directive_source = HEADING_LINE_RE.sub(" ", ANY_LINK_RE.sub(" ", body))
+    refs.extend(DIRECTIVE_RE.findall(directive_source))
     refs = [r for r in refs if is_file_like(r)]
     seen: set[str] = set()
     unique: list[str] = []
