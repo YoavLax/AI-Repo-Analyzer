@@ -64,6 +64,17 @@ class ArtifactIndex:
     tree: RepoTree | None = None
     facts: RepoFacts | None = None
 
+    @staticmethod
+    def analyzed(artifacts: tuple[Artifact, ...]) -> tuple[Artifact, ...]:
+        """The subset whose contents this snapshot read, in the same order.
+
+        The idiom for any rule that judges an artifact's *contents*: a file
+        whose bytes were never fetched can only be reported as a defect by
+        mistake. Presence rules use the unfiltered tuples instead, since a file
+        that exists but went unread is still a file that exists.
+        """
+        return tuple(a for a in artifacts if not a.not_analyzed)
+
     def entrypoint_docs(self) -> tuple[ParsedDocument, ...]:
         """The always-on entry points that exist, in stable order."""
         return tuple(
@@ -95,11 +106,27 @@ def _error_text(exc: Exception) -> str:
     return str(exc)
 
 
-def _make_artifact(root: Path, rel: PurePosixPath, kind: ArtifactKind, platform: Platform) -> Artifact:
+def _make_artifact(
+    root: Path,
+    rel: PurePosixPath,
+    kind: ArtifactKind,
+    platform: Platform,
+    has_content: bool = True,
+) -> Artifact:
     abs_path = root / str(rel)
 
     if kind in _PATH_ONLY_KINDS:
+        # Presence-only kinds are complete without their bytes, so a snapshot
+        # that skipped them is still telling the whole truth about them.
         return Artifact(kind=kind, rel_path=rel, platform=platform)
+
+    if not has_content:
+        # The file is in the repository but not in this snapshot. Its contents
+        # are unknown — which is a limit of the analysis, never a finding about
+        # the repository. Every content rule reads `doc`/`json_data`/
+        # `parse_error`, all three of which stay empty here, so an unanalyzed
+        # artifact drops out of the quality bucket instead of failing it.
+        return Artifact(kind=kind, rel_path=rel, platform=platform, not_analyzed=True)
 
     if kind in _JSON_KINDS:
         json_data: Any | None = None
@@ -132,7 +159,7 @@ def build_index(tree: RepoTree) -> ArtifactIndex:
         if classified is None:
             continue
         kind, platform = classified
-        artifact = _make_artifact(tree.root, rel, kind, platform)
+        artifact = _make_artifact(tree.root, rel, kind, platform, tree.has_content(rel))
         artifacts.append(artifact)
         by_kind[kind].append(artifact)
 

@@ -8,6 +8,12 @@ dist/
 .pytest_cache/
 .mypy_cache/
 
+# Secrets. docker-compose.yml reads GITHUB_TOKEN from here, so this file holds
+# a live credential on any machine that runs the container.
+.env
+.env.*
+!.env.example
+
 # Personal, machine-local Claude Code files — never commit these.
 CLAUDE.local.md
 .claude/settings.local.json

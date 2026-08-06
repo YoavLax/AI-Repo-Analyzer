@@ -1,8 +1,16 @@
 from pathlib import Path
 
+from airx import fs
+from airx.discovery import build_index
 from airx.parser import parse
 from airx.model import Severity
 from airx.rules import skills as rules
+
+
+def _index(root: Path):
+    """skills.references.resolve answers from the repository listing, so it
+    needs the scanned tree as well as the document."""
+    return build_index(fs.scan(root))
 
 
 def _doc(tmp_path: Path, name: str, frontmatter_yaml: str, body: str = "\n# Body\n"):
@@ -123,14 +131,14 @@ def test_references_resolve_flags_broken_and_escaping(tmp_path):
         "name: refs\ndescription: Uses references. Use this skill when the user asks to test references.",
         body="\nSee [missing](scripts/missing.sh) and [outside](../../outside.txt).\n",
     )
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 0.0
     assert len(diags) == 2
 
 
 def test_references_resolve_not_applicable_when_no_refs(tmp_path):
     doc = _doc(tmp_path, "norefs", "name: norefs\ndescription: Does something. Use this skill when asked to do something.")
-    assert rules.check_references_resolve(doc) is None
+    assert rules.check_references_resolve(doc, _index(tmp_path)) is None
 
 
 def test_references_resolve_passes_for_valid_reference(tmp_path):
@@ -144,7 +152,7 @@ def test_references_resolve_passes_for_valid_reference(tmp_path):
         encoding="utf-8",
     )
     doc = parse(path)
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 1.0
     assert diags == []
 
@@ -164,7 +172,7 @@ def test_references_resolve_accepts_a_directory_link(tmp_path):
         encoding="utf-8",
     )
     doc = parse(path)
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 1.0
     assert diags == []
 
@@ -179,7 +187,7 @@ def test_references_resolve_rejects_an_empty_directory_link(tmp_path):
         encoding="utf-8",
     )
     doc = parse(path)
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 0.0
     assert len(diags) == 1
 
@@ -199,7 +207,7 @@ def test_references_resolve_skips_example_syntax_in_code_blocks(tmp_path):
             "```\n"
         ),
     )
-    assert rules.check_references_resolve(doc) is None
+    assert rules.check_references_resolve(doc, _index(tmp_path)) is None
 
 
 def test_directive_pattern_ignores_prose_and_urls(tmp_path):
@@ -218,7 +226,7 @@ def test_directive_pattern_ignores_prose_and_urls(tmp_path):
         encoding="utf-8",
     )
     doc = parse(path)
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 1.0
     assert diags == []
 

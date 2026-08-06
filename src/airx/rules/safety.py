@@ -225,8 +225,8 @@ def check_permissions_least_privilege(index: ArtifactIndex):
 )
 def check_settings_valid(index: ArtifactIndex):
     settings = index.claude_settings
-    if settings is None:
-        return None  # N/A: no committed settings file
+    if settings is None or settings.not_analyzed:
+        return None  # N/A: no committed settings file, or its bytes went unread
     if settings.parse_error is not None:
         return 0.0, [(settings.rel_path, Diagnostic(
             rule_id="safety.settings.valid", severity=Severity.ERROR,

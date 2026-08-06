@@ -171,7 +171,7 @@ All configuration is environment variables:
 | `LOCAL_REPOS_ROOT` | unset | Root directory local-path analyses are strictly confined to |
 | `STATIC_DIR` | unset | Directory of the built SPA (`web/dist`) to serve |
 | `MAX_CONCURRENT_ANALYSES` | `4` | Cap on simultaneous analyses |
-| `MAX_FETCH_FILES` | `400` | Online-scan cap on classified AI-artifact files fetched per repository; raise it to analyze larger repos without local-path mode |
+| `MAX_FETCH_FILES` | `1200` | Online-scan cap on classified AI-artifact files fetched per repository; set from measured demand (the densest repository scanned needs 1,171). Files past the cap are reported as unanalyzed, never as defects, so raising it widens coverage rather than fixing correctness |
 | `MAX_FILE_BYTES` | `2097152` (2 MB) | Online-scan per-file size cap, in bytes |
 | `MAX_TOTAL_BYTES` | `20971520` (20 MB) | Online-scan total fetch-size cap, in bytes |
 

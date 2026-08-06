@@ -142,7 +142,8 @@ def check_commands_present(index: ArtifactIndex):
     summary="Every agent file has non-empty YAML frontmatter.",
 )
 def check_agents_frontmatter_present(index: ArtifactIndex):
-    agents = _sorted_artifacts(index.agents)
+    # Contents rule: judge only the agent files this snapshot actually read.
+    agents = _sorted_artifacts(index.analyzed(index.agents))
     if not agents:
         return None
     sats: list[float] = []

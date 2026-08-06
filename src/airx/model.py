@@ -116,6 +116,12 @@ class Artifact:
     Markdown artifacts carry a `doc`; JSON artifacts (hooks, MCP, settings)
     carry `json_data`. A file that fails to decode or parse carries
     `parse_error` instead of raising — rules report the failure.
+
+    `not_analyzed` is the third state, and it is not a failure: the file exists
+    in the repository but its bytes are outside this snapshot, so nothing is
+    known about its contents. It carries neither `doc` nor `parse_error`,
+    because reporting "failed to parse" for a file nobody read would be an
+    accusation the evidence does not support.
     """
 
     kind: ArtifactKind
@@ -124,3 +130,4 @@ class Artifact:
     doc: ParsedDocument | None = None
     json_data: Any | None = None
     parse_error: str | None = None
+    not_analyzed: bool = False
