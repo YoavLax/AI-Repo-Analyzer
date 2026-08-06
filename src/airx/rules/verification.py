@@ -359,11 +359,13 @@ def _hook_file_problems(artifact: Artifact) -> list[str]:
     effort="mechanical",
 )
 def check_hooks_schema(index: ArtifactIndex):
-    if not index.hooks:
+    # Contents rule: only hook files whose bytes are in this snapshot.
+    hooks = index.analyzed(index.hooks)
+    if not hooks:
         return None  # N/A: no hook files
     sats: list[float] = []
     diags: list[tuple] = []
-    for artifact in index.hooks:  # already sorted by rel_path
+    for artifact in hooks:  # already sorted by rel_path
         problems = _hook_file_problems(artifact)
         if problems:
             sats.append(0.0)
@@ -437,10 +439,13 @@ def check_hooks_enforces_lint(index: ArtifactIndex):
         if settings is not None and isinstance(settings.json_data, dict)
         else None
     )
-    if not index.hooks and not settings_hooks:
+    # Contents rule: hook files this snapshot never read contribute no strings,
+    # so counting them here would report "no lint command" without evidence.
+    hooks = index.analyzed(index.hooks)
+    if not hooks and not settings_hooks:
         return None  # N/A: no hooks configured at all (verify.hooks.present covers that gap)
     strings: list[str] = []
-    for artifact in index.hooks:
+    for artifact in hooks:
         if isinstance(artifact.json_data, dict):
             strings.extend(_iter_strings(artifact.json_data.get("hooks")))
     if settings_hooks is not None:

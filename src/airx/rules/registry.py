@@ -14,6 +14,7 @@ is a value in [0.0, 1.0]. Binary rules return `(1.0, [])` on pass or
 """
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
@@ -43,6 +44,10 @@ class RuleScope(str, Enum):
 
 SkillRuleFn = Callable[[ParsedDocument], RuleResult]
 RepoRuleFn = Callable[[ArtifactIndex], RuleResult]
+#: A skill rule that also needs repository-wide context — the file listing, for
+#: instance, which is the only honest way to answer "does this path exist?"
+#: without probing a filesystem the snapshot may only partly hold.
+SkillRuleWithIndexFn = Callable[[ParsedDocument, ArtifactIndex], RuleResult]
 
 
 @dataclass(frozen=True)
@@ -72,6 +77,10 @@ class RuleMeta:
     #: avoid listing both as separate, additive-looking top fixes for what is
     #: really a single action.
     implies: tuple[str, ...] = ()
+    #: True for a SKILL-scope rule declared as `fn(doc, index)`. Derived from
+    #: the signature at registration, so a rule opts in simply by asking for
+    #: the argument rather than by setting a flag that could disagree with it.
+    wants_index: bool = False
 
 
 _REGISTRY: dict[str, RuleMeta] = {}
@@ -134,6 +143,10 @@ def rule(
             effort=effort,
             fix_by_platform=tuple(fix_by_platform),
             implies=tuple(implies),
+            wants_index=(
+                scope == RuleScope.SKILL
+                and len(inspect.signature(fn).parameters) == 2
+            ),
         )
         return fn
 

@@ -137,11 +137,14 @@ def check_scoped_files_present(index: ArtifactIndex):
     summary="Every *.instructions.md declares a non-empty applyTo frontmatter scope.",
 )
 def check_applyto_declared(index: ArtifactIndex):
-    if not index.instructions:
+    # Contents rule: an instructions file whose bytes are outside this snapshot
+    # cannot be said to lack applyTo — nobody looked.
+    instructions = index.analyzed(index.instructions)
+    if not instructions:
         return None  # N/A: no instructions files to scope
     sats: list[float] = []
     diags: list[tuple] = []
-    for a in index.instructions:  # sorted by rel_path (discovery order)
+    for a in instructions:  # sorted by rel_path (discovery order)
         if a.doc is None:
             sats.append(0.0)
             diags.append((a.rel_path, Diagnostic(

@@ -557,6 +557,12 @@ def check_references_pointers_not_snippets(index: ArtifactIndex):
             if target not in tree_files or target in seen_targets:
                 continue
             seen_targets.add(target)
+            # Ask the snapshot before touching the disk. Relying on the read to
+            # fail would make the verdict depend on whether the file happens to
+            # be present locally — the same commit would score differently in
+            # the web app and on the CLI (D3).
+            if index.tree is not None and not index.tree.has_content(PurePosixPath(target)):
+                continue
             try:
                 text = (index.root / target).read_text(encoding="utf-8-sig")
             except (OSError, UnicodeDecodeError):

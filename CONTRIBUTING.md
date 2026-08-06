@@ -37,6 +37,38 @@ If you need genuinely non-deterministic behavior (e.g. actually executing a
 repo's build/test commands), it must live in an explicitly opt-in code path
 that is excluded from the score — see `plan.md` section 3.2.
 
+## The second rule: never accuse a file you did not read
+
+An online scan lists every file in the repository but fetches only the subset a
+budget allows, so a rule can be handed a path whose bytes are not on disk. The
+absence of content is a limit of the analysis. It is never a finding about the
+repository, and a rule that reports it as one is telling the user their working
+file is broken.
+
+`RepoTree` carries the distinction so no rule has to remember it:
+
+- **`tree.has_content(rel)`** — can these bytes be read? `False` means unknown,
+  not bad. `discovery` already turns such artifacts into `not_analyzed`, which
+  keeps them out of `doc`, `json_data`, and `parse_error`.
+- **`tree.resolves(path)`** — does the repository contain this file, or a
+  directory holding one? Ask this instead of `Path.is_file()`/`Path.is_dir()`.
+  The listing covers the whole repository at the pinned sha whatever the fetch
+  budget was; the filesystem does not.
+
+So, in a rule:
+
+- Judging an artifact's **contents** → iterate `index.analyzed(index.<kind>)`.
+  When nothing is left, return `None`; a pillar with no evidence must go N/A
+  rather than score zero.
+- Checking whether a path **exists** → `index.tree.resolves(...)`.
+- A `RuleScope.SKILL` rule that needs the listing declares it by taking a
+  second parameter, `fn(doc, index)`. The registry reads the signature.
+
+`tests/test_partial_snapshot.py` enforces this across the whole scored report:
+no finding may reference a path the snapshot never read. It covers rules that
+do not exist yet, so a new rule that gets this wrong fails there rather than in
+someone's report.
+
 ## Adding a rule
 
 Rules are pure functions registered with the `@rule(...)` decorator in

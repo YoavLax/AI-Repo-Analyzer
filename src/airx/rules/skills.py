@@ -24,10 +24,12 @@ Every rule function returns `(satisfaction, diagnostics)` or `None`:
 """
 from __future__ import annotations
 
+import posixpath
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from airx import config, fs, markdown as md
+from airx.discovery import ArtifactIndex
 from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, RuleSource, Severity
 from airx.rules.registry import RuleScope, rule
 from airx.tokenizer import estimate_tokens
@@ -292,34 +294,6 @@ def _visible_files(root: Path) -> list[Path]:
         except OSError:
             continue
     return out
-
-
-def _is_scanned_file(base: Path, target: Path) -> bool:
-    """True when `target` (inside `base`) is a file or directory fs.scan
-    would have recorded as visible: no symlinked ancestor and no
-    excluded-dir component. A directory reference (e.g. `templates/`, a
-    common convention for linking to a folder rather than one of its files)
-    resolves when the directory itself contains at least one scan-visible
-    file — an absent, empty, or scan-invisible target (symlink,
-    __pycache__/...) answers False, so the answer — and therefore the
-    score — is a function of the scanned tree alone (D4/D9)."""
-    try:
-        rel_parts = target.relative_to(base).parts
-    except ValueError:
-        return False
-    if any(part in fs.DEFAULT_EXCLUDED_DIRS for part in rel_parts):
-        return False
-    try:
-        for i in range(len(rel_parts)):
-            if base.joinpath(*rel_parts[:i + 1]).is_symlink():
-                return False
-        if target.is_file():
-            return True
-        if target.is_dir():
-            return bool(_visible_files(target))
-        return False
-    except OSError:
-        return False
 
 
 def _script_files(doc: ParsedDocument) -> list[Path] | None:
@@ -925,22 +899,28 @@ def check_bloat_base64(doc: ParsedDocument):
     fix="Split detail into a references/ or scripts/ directory next to SKILL.md and link to it from the body.",
     effort="authoring",
 )
-def check_disclosure_used(doc: ParsedDocument):
+def check_disclosure_used(doc: ParsedDocument, index: ArtifactIndex):
     body_lines = len(doc.body.splitlines())
     if body_lines <= config.DISCLOSURE_BODY_LINES:
         return None
-    skill_dir = doc.path.parent
-    has_sibling = False
-    for name in ("references", "scripts"):
-        sibling = skill_dir / name
-        try:
-            if not sibling.is_symlink() and sibling.is_dir() and _visible_files(sibling):
-                # An empty (or scan-invisible) sibling dir is not disclosure:
-                # fs.scan records only files, so only file contents may count.
-                has_sibling = True
-                break
-        except OSError:
-            continue
+    if index.tree is None:
+        return None
+    try:
+        skill_dir = PurePosixPath(
+            doc.path.resolve().relative_to(index.root).as_posix()
+        ).parent
+    except ValueError:  # pragma: no cover - a skill doc outside its own root
+        return None
+    # Answered from the listing, not the disk. A `references/` directory whose
+    # files fall outside a fetch budget is still a `references/` directory —
+    # and those files are the first thing a constrained fetch drops, so a
+    # filesystem probe would accuse exactly the skills that did this right.
+    # `RepoTree.resolves` records only directories that hold a visible file, so
+    # an empty sibling still does not count as disclosure.
+    has_sibling = any(
+        index.tree.resolves(f"{skill_dir.as_posix()}/{name}")
+        for name in ("references", "scripts")
+    )
     if has_sibling:
         return 1.0, []
     return 0.0, [Diagnostic(
@@ -1053,28 +1033,44 @@ def check_scripts_help(doc: ParsedDocument):
     fix="Fix the reference path or add the missing file inside the skill directory.",
     effort="mechanical",
 )
-def check_references_resolve(doc: ParsedDocument):
-    """Existence check for body references.
+def check_references_resolve(doc: ParsedDocument, index: ArtifactIndex):
+    """Existence check for body references, answered from the file listing.
 
     A reference that escapes the skill directory can never exist *inside* it,
     so it is reported here as unresolvable ('resolves outside the skill
     directory') in addition to the dedicated CWE-59 rule
     `skills.references.escape`, which owns the escape finding itself.
+
+    Existence is decided against `index.tree`, never against the filesystem.
+    A clone-free snapshot fetches only part of a large repository, and a
+    `Path.is_file()` probe cannot tell "this file is not in the repository"
+    from "this file was not fetched" — one real scan turned 356 perfectly good
+    references into errors that way. The listing covers the whole repository
+    at the pinned sha whatever the fetch budget was, so it answers the question
+    the rule is actually asking.
     """
     refs = _extract_references(doc.body)
     if not refs:
         return None
-    skill_dir = doc.path.parent.resolve()
+    if index.tree is None:
+        return None  # nothing to resolve against
+    try:
+        skill_dir = PurePosixPath(
+            doc.path.resolve().relative_to(index.root).as_posix()
+        ).parent
+    except ValueError:  # pragma: no cover - a skill doc outside its own root
+        return None
+
     diags: list[Diagnostic] = []
     for ref in refs:
-        target = (skill_dir / ref).resolve()
-        if not target.is_relative_to(skill_dir):
+        target = posixpath.normpath(posixpath.join(skill_dir.as_posix(), ref))
+        if posixpath.isabs(ref) or target == ".." or target.startswith("../"):
             # No absolute target path in the message: the checkout location
             # must not leak into report output.
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
                                      message=f"Reference '{ref}' resolves outside the skill directory."))
             continue
-        if not _is_scanned_file(skill_dir, target):
+        if not index.tree.resolves(target):
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
                                      message=f"Referenced file does not exist in the scanned tree: '{ref}'."))
     return (1.0, []) if not diags else (0.0, diags)

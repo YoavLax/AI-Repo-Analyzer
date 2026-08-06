@@ -90,7 +90,7 @@ def evaluate(
             sats: list[float] = []
             diags: list[tuple[PurePosixPath | None, Diagnostic]] = []
             for doc in docs:
-                result = meta.fn(doc)
+                result = meta.fn(doc, index) if meta.wants_index else meta.fn(doc)
                 if result is None:
                     continue
                 sat, file_diags = result

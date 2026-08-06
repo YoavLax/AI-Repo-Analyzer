@@ -37,7 +37,12 @@ API_HOST = "https://api.github.com"
 RAW_HOST = "https://raw.githubusercontent.com"
 _RAW_NETLOC = "raw.githubusercontent.com"
 
-MAX_FETCH_FILES = 400
+#: Set from measured demand rather than guessed: across the repositories this
+#: project scans, the most artifact-dense (affaan-m/ecc) selects 1,171 files —
+#: 8.6 MB, ~30s — and every other one measured needs far less. A repository
+#: past this cap still produces a report; the files beyond it are reported as
+#: unanalyzed (see `RepoTree.materialized`), never as defects.
+MAX_FETCH_FILES = 1200
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_BYTES = 20 * 1024 * 1024
 #: The recursive Trees response for a ~100k-entry repository is tens of MB —
@@ -595,7 +600,14 @@ def fetch_snapshot(
     _materialize(tuple(referenced), PHASE_LINKED)
     skipped.sort(key=lambda s: s.path.as_posix())
 
-    tree = RepoTree(root=workdir, files=tuple(listed))
+    # The listing is everything the repository holds; `materialized` is what
+    # this run actually fetched. Handing both to the analysis is what keeps a
+    # budget shortfall from being reported as a repository defect.
+    tree = RepoTree(
+        root=workdir,
+        files=tuple(listed),
+        materialized=frozenset(selected) | frozenset(referenced),
+    )
     stats = SnapshotStats(
         listed_files=len(listed), fetched_files=len(selected) + len(referenced),
         fetched_bytes=total, resolved_sha=sha, skipped=tuple(skipped),

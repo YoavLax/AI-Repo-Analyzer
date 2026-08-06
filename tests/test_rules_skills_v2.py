@@ -9,7 +9,8 @@ the references.resolve weight split (6 -> 5, with escape at 6).
 """
 from pathlib import Path
 
-from airx import config
+from airx import config, fs
+from airx.discovery import build_index
 from airx.model import Platform, RuleSource, Severity
 from airx.parser import parse
 from airx.rules import skills as rules
@@ -136,7 +137,7 @@ def test_references_resolve_still_flags_escaping_ref_as_unresolvable(tmp_path):
         "name: refs\ndescription: Uses references when asked.",
         body="\nSee [missing](scripts/missing.sh) and [outside](../../outside.txt).\n",
     )
-    sat, diags = rules.check_references_resolve(doc)
+    sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
     assert sat == 0.0
     assert len(diags) == 2
     assert any("resolves outside the skill directory" in d.message for d in diags)
@@ -155,13 +156,13 @@ def test_reference_rule_weights_after_split():
 
 def test_disclosure_used_not_applicable_for_short_body(tmp_path):
     doc = _doc(tmp_path, "short", "name: short\ndescription: Does something when asked.")
-    assert rules.check_disclosure_used(doc) is None
+    assert rules.check_disclosure_used(doc, build_index(fs.scan(tmp_path))) is None
 
 
 def test_disclosure_used_flags_long_body_without_sibling_dirs(tmp_path):
     body = "\n" + ("Line of text.\n" * (config.DISCLOSURE_BODY_LINES + 5))
     doc = _doc(tmp_path, "long", "name: long\ndescription: Does something when asked.", body=body)
-    sat, diags = rules.check_disclosure_used(doc)
+    sat, diags = rules.check_disclosure_used(doc, build_index(fs.scan(tmp_path)))
     assert sat == 0.0
     assert diags[0].severity == Severity.INFO
     assert "references" in diags[0].message
@@ -174,7 +175,7 @@ def test_disclosure_used_passes_long_body_with_references_dir(tmp_path):
     # An empty dir is invisible to fs.scan; only a dir with at least one
     # scan-visible file counts as progressive disclosure.
     (tmp_path / "longref" / "references" / "setup.md").write_text("Setup.\n", encoding="utf-8")
-    sat, diags = rules.check_disclosure_used(doc)
+    sat, diags = rules.check_disclosure_used(doc, build_index(fs.scan(tmp_path)))
     assert sat == 1.0
     assert diags == []
 
@@ -184,7 +185,7 @@ def test_disclosure_used_passes_long_body_with_scripts_dir(tmp_path):
     doc = _doc(tmp_path, "longscr", "name: longscr\ndescription: Does something when asked.", body=body)
     (tmp_path / "longscr" / "scripts").mkdir()
     (tmp_path / "longscr" / "scripts" / "run.sh").write_text("echo run\n", encoding="utf-8")
-    sat, diags = rules.check_disclosure_used(doc)
+    sat, diags = rules.check_disclosure_used(doc, build_index(fs.scan(tmp_path)))
     assert sat == 1.0
 
 

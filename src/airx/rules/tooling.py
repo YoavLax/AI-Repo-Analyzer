@@ -75,11 +75,12 @@ def check_mcp_present(index: ArtifactIndex):
     effort="mechanical",
 )
 def check_mcp_valid(index: ArtifactIndex):
-    if not index.mcp:
+    # Contents rule: only MCP files whose bytes are in this snapshot.
+    if not index.analyzed(index.mcp):
         return None  # N/A: no MCP files
     sats: list[float] = []
     diags: list[tuple[Any, Diagnostic]] = []
-    for artifact in _sorted_mcp(index):
+    for artifact in index.analyzed(_sorted_mcp(index)):
         file_diags: list[Diagnostic] = []
         data = artifact.json_data
         if artifact.parse_error is not None:
