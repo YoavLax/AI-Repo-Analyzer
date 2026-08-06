@@ -183,6 +183,16 @@ All configuration is environment variables:
   An optional `"platform": "copilot"|"claude"|"all"` field scopes scoring to
   one platform's rules (default `"all"`), mirroring the CLI's `--platform`
   flag; the applied value is echoed back as the report's top-level `platform` key.
+- `POST /api/analyze/stream` — the same analysis and the same request body,
+  streamed as NDJSON: one `{"type":"progress","phase","done","total"}` object
+  per line while the work runs, then a single terminal
+  `{"type":"result","report":{...}}` or `{"type":"error","error":{...}}`. The
+  counts are measured, not estimated — `phase` walks
+  `resolving → listing → fetching → linked → scoring`, and `done`/`total` in the
+  fetch phases are real file counts — which is what lets the web UI draw a
+  progress bar that tracks the run. The report on the result line is identical
+  to what `/api/analyze` returns for the same commit; use the plain endpoint for
+  scripting, where one request and one status code is the simpler contract.
 - `GET /api/health` — liveness. `GET /api/version` — `{version, local_mode}`.
 
 ### Private repositories

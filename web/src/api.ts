@@ -197,6 +197,104 @@ export function analyze(body: AnalyzeRequest): Promise<Report> {
   });
 }
 
+/**
+ * Ingest phases reported by `/api/analyze/stream`, in the order they occur.
+ * Mirrors `airx.ingest` (`PHASE_*`) plus the service's `scoring`.
+ */
+export type AnalysisPhase = "resolving" | "listing" | "fetching" | "linked" | "scoring";
+
+/** `total` is 0 while a phase's work is not yet countable. */
+export interface AnalysisProgress {
+  phase: AnalysisPhase;
+  done: number;
+  total: number;
+}
+
+type StreamEvent =
+  | ({ type: "progress" } & AnalysisProgress)
+  | { type: "result"; report: Report }
+  | { type: "error"; error: { code: number; message: string } };
+
+/** Applies one NDJSON line; returns the report if this was the terminal one. */
+function applyStreamLine(line: string, onProgress: (p: AnalysisProgress) => void): Report | null {
+  let event: StreamEvent;
+  try {
+    event = JSON.parse(line) as StreamEvent;
+  } catch {
+    // A proxy injecting a non-JSON line would otherwise abort a run that the
+    // server may well have completed; skip it and keep reading for the result.
+    return null;
+  }
+  if (event.type === "progress") {
+    onProgress({ phase: event.phase, done: event.done, total: event.total });
+    return null;
+  }
+  if (event.type === "error") {
+    throw new ApiError(event.error.code, event.error.message);
+  }
+  return event.report;
+}
+
+/**
+ * POST /api/analyze/stream — the same report as `analyze`, with real progress.
+ *
+ * `onProgress` is driven by counts the server actually measured (files listed,
+ * files fetched), not by elapsed time, so the caller can render a bar that
+ * tracks the work instead of guessing at it.
+ */
+export async function analyzeStreaming(
+  body: AnalyzeRequest,
+  onProgress: (progress: AnalysisProgress) => void,
+): Promise<Report> {
+  let response: Response;
+  try {
+    response = await fetch("/api/analyze/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "Could not reach the AgentCompass server.");
+  }
+  if (!response.ok) {
+    await throwApiError(response);
+  }
+
+  let report: Report | null = null;
+  const consume = (line: string) => {
+    const trimmed = line.trim();
+    if (trimmed) report = applyStreamLine(trimmed, onProgress) ?? report;
+  };
+
+  if (!response.body) {
+    // No ReadableStream (older browser, or a proxy that buffered the whole
+    // body). The analysis has already run — parse what arrived rather than
+    // re-requesting, which would make the server do all of it a second time.
+    (await response.text()).split("\n").forEach(consume);
+  } else {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        consume(buffer.slice(0, newline));
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+      }
+    }
+    consume(buffer + decoder.decode());
+  }
+
+  if (report === null) {
+    throw new ApiError(502, "The analysis ended without returning a report.");
+  }
+  return report;
+}
+
 /** GET /api/version — {version, local_mode}. */
 export function version(): Promise<VersionInfo> {
   return request<VersionInfo>("/api/version");

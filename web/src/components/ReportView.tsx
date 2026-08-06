@@ -112,7 +112,10 @@ export function ReportView({
           <span className="hidden text-gray-300 dark:text-gray-600 sm:inline" aria-hidden="true">
             /
           </span>
-          <span className="font-mono text-sm text-gray-700 dark:text-night-text">
+          <span
+            className="min-w-0 max-w-full truncate font-mono text-sm text-gray-700 dark:text-night-text"
+            title={`${meta.source}${meta.ref ? `@${meta.ref}` : ""}`}
+          >
             {meta.source}
             {meta.ref ? `@${meta.ref}` : ""}
           </span>
@@ -158,11 +161,11 @@ export function ReportView({
         )}
 
         {/* Summary row */}
-        <div className="grid gap-4 md:grid-cols-[auto_1fr]">
+        <div className="grid gap-4 md:grid-cols-[auto_minmax(0,1fr)]">
           <div className="card flex items-center justify-center p-6">
             <ScoreRing score={score} />
           </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
             {report.platform !== "claude" && (
               <StatCard label="Copilot score" value={formatScore(score.copilot)} hint="platform score / 100" />
             )}

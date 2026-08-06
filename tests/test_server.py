@@ -172,3 +172,65 @@ def test_spa_fallback_serves_index(tmp_path):
     assert "agentcompass" in client.get("/some/spa/route").text
     assert client.get("/assets/main.js").status_code == 200
     assert client.get("/api/nope").status_code == 404
+
+
+def _ndjson(response) -> list[dict]:
+    """Parse an NDJSON body into its objects, rejecting malformed lines."""
+    return [json.loads(line) for line in response.text.splitlines() if line.strip()]
+
+
+def test_analyze_stream_reports_real_counts_then_the_report():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    response = client.post("/api/analyze/stream", json={"source": "o/r"})
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+
+    events = _ndjson(response)
+    assert events[-1]["type"] == "result", events[-1]
+    assert all(e["type"] == "progress" for e in events[:-1])
+
+    report = events[-1]["report"]
+    progress = events[:-1]
+    phases = [e["phase"] for e in progress]
+    # Ordered, and every phase of the pipeline is represented.
+    assert phases[0] == "resolving"
+    assert "listing" in phases and "fetching" in phases and phases[-1] == "scoring"
+
+    # The counts are the real ones, not a synthetic ramp: the listing phase
+    # reports the tree size and the fetch phase ends at the file count that
+    # actually landed in the snapshot.
+    listing = [e for e in progress if e["phase"] == "listing"][-1]
+    assert listing["total"] == report["meta"]["listed_files"] == len(REPO_FILES)
+    fetching = [e for e in progress if e["phase"] == "fetching"]
+    assert fetching[-1]["done"] == fetching[-1]["total"] > 0
+    # Monotone within the phase — a bar driven by this can never run backwards.
+    assert [e["done"] for e in fetching] == sorted(e["done"] for e in fetching)
+
+
+def test_analyze_stream_returns_byte_identical_report_to_plain_analyze():
+    """Determinism (D1) must not depend on whether anyone is watching."""
+    plain = _client(fetcher=FakeFetcher(REPO_FILES)).post(
+        "/api/analyze", json={"source": "o/r"},
+    ).json()
+    streamed = _ndjson(
+        _client(fetcher=FakeFetcher(REPO_FILES)).post("/api/analyze/stream", json={"source": "o/r"}),
+    )[-1]["report"]
+
+    plain.pop("meta"), streamed.pop("meta")  # duration_ms is wall-clock
+    assert json.dumps(streamed, sort_keys=True) == json.dumps(plain, sort_keys=True)
+
+
+def test_analyze_stream_delivers_failures_as_a_terminal_error_event():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    response = client.post("/api/analyze/stream", json={"source": "not a repo url"})
+    # The request itself was well-formed, so the failure arrives in the stream.
+    events = _ndjson(response)
+    assert events[-1]["type"] == "error"
+    assert events[-1]["error"]["code"] == 400
+
+
+def test_analyze_stream_rejects_a_malformed_request_before_streaming():
+    client = _client(fetcher=FakeFetcher(REPO_FILES))
+    response = client.post("/api/analyze/stream", json={"source": "o/r", "path": "x"})
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == 400

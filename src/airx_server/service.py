@@ -15,6 +15,7 @@ from airx.discovery import build_index
 from airx.ingest import (
     Fetcher,
     IngestError,
+    ProgressHook,
     SKIP_REASONS,
     SkippedFile,
     parse_github_url,
@@ -39,6 +40,11 @@ class ServiceError(Exception):
 #: How many skipped paths to name before summarizing the rest. Enough to act
 #: on, few enough that a pathological repository cannot flood the report.
 _SKIP_SAMPLE = 5
+
+#: Final phase, reported once the network work is done and the deterministic
+#: pipeline takes over. Not file-counted: rule evaluation is a single pass whose
+#: cost is not proportional to anything the caller can be shown honestly.
+PHASE_SCORING = "scoring"
 
 
 def _skip_caveats(skipped: tuple[SkippedFile, ...]) -> list[str]:
@@ -94,6 +100,7 @@ def analyze_remote(
     max_file_bytes: int = MAX_FILE_BYTES,
     max_total_bytes: int = MAX_TOTAL_BYTES,
     platform: Platform | None = None,
+    on_progress: ProgressHook | None = None,
 ) -> dict:
     remote = parse_github_url(source)
     if remote is None:
@@ -111,9 +118,12 @@ def analyze_remote(
             tree, stats = fetch_snapshot(
                 remote, Path(workdir), fetcher=fetcher, max_fetch_files=max_fetch_files,
                 max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes,
+                on_progress=on_progress,
             )
         except IngestError as exc:
             raise ServiceError(exc.user_message, exc.status) from exc
+        if on_progress is not None:
+            on_progress(PHASE_SCORING, 0, 0)
         report = _analyze_tree(tree, platform=platform)
     report["meta"] = {
         "source": f"{remote.owner}/{remote.repo}",

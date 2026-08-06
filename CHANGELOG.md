@@ -15,6 +15,13 @@ report schema, and determinism contract are untouched — ingest happens before
 the pipeline, exactly like the CLI's clone path.
 
 ### Added
+- **Streaming progress** — `POST /api/analyze/stream` returns NDJSON: a
+  `{"type":"progress","phase","done","total"}` line as each phase advances, then
+  a terminal `result` or `error` line. The counts come from the ingest itself
+  (files listed, files fetched), so the web UI's progress bar tracks the actual
+  run instead of easing on a timer. `POST /api/analyze` is unchanged, and the
+  report on the result line is byte-identical to it — the progress hook is a
+  side channel that cannot influence the snapshot (D1).
 - **10 new rules** (catalog now 104) from a 2026-08 best-practice research
   pass over `shanraisshan/claude-code-best-practice`, humanlayer.dev's
   "Writing a good CLAUDE.md", SFEIR Institute's Claude Code best practices,

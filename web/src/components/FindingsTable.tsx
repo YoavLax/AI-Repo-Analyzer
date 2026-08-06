@@ -30,7 +30,7 @@ function SeverityChip({ severity }: { severity: SeverityLevel }) {
   const style = SEVERITY_CHIP[severity];
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ${style.chip}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${style.chip}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} aria-hidden="true" />
       {SEVERITY_LABELS[severity]}
@@ -126,24 +126,30 @@ export function FindingsTable({ findings }: FindingsTableProps) {
                 : "repository";
             return (
               <li key={`${finding.rule_id}-${finding.path ?? ""}-${finding.line ?? 0}-${index}`}>
+                {/* Every track is minmax(0, …): a grid item defaults to
+                    min-width:auto, so without the 0 floor a long rule id
+                    refuses to shrink and spills into the next column. */}
                 <button
                   type="button"
                   onClick={() => hasDetails && setExpanded(isOpen ? null : index)}
                   aria-expanded={hasDetails ? isOpen : undefined}
                   disabled={!hasDetails}
-                  className={`focus-ring grid w-full grid-cols-[6.5rem_1fr_auto] items-start gap-x-3 gap-y-1 rounded-lg px-2 py-3 text-left sm:grid-cols-[6.5rem_10rem_1fr_auto] ${
+                  className={`focus-ring grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 rounded-lg px-2 py-3 text-left sm:grid-cols-[auto_minmax(0,11rem)_minmax(0,1fr)_auto] ${
                     hasDetails ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-night-border/40" : "cursor-default"
                   }`}
                 >
                   <SeverityChip severity={finding.severity} />
-                  <span className="font-mono text-[13px] text-primary-700 dark:text-primary-400">
+                  {/* overflow-wrap:anywhere, not break-words: rule ids are dotted
+                      (`verify.hooks.enforces-lint`) and `.` is not a break
+                      opportunity, so break-word alone still overflows. */}
+                  <span className="min-w-0 font-mono text-[13px] text-primary-700 [overflow-wrap:anywhere] dark:text-primary-400">
                     {finding.rule_id}
                   </span>
-                  <span className="col-span-3 sm:col-span-1">
-                    <span className="block text-sm text-gray-700 dark:text-night-text">
+                  <span className="col-span-3 min-w-0 sm:col-span-1">
+                    <span className="block text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-night-text">
                       {finding.message}
                     </span>
-                    <span className="mt-0.5 block font-mono text-xs text-gray-400 dark:text-gray-500">
+                    <span className="mt-0.5 block font-mono text-xs text-gray-400 [overflow-wrap:anywhere] dark:text-gray-500">
                       {location}
                     </span>
                   </span>

@@ -356,3 +356,45 @@ def test_fetch_error_propagates_from_a_worker(tmp_path):
 
     with pytest.raises(IngestError):
         fetch_snapshot(RemoteRepo("o", "r"), tmp_path, fetcher=Failing(REPO_FILES))
+
+
+def test_progress_hook_reports_the_real_snapshot_and_changes_nothing(tmp_path):
+    """The hook is a side channel: real counts out, no influence in.
+
+    A progress bar is only worth showing if it tracks the work actually being
+    done, so the reported totals are asserted against the returned stats rather
+    than against a hand-written expectation.
+    """
+    events: list[tuple[str, int, int]] = []
+    watched_dir, plain_dir = tmp_path / "watched", tmp_path / "plain"
+    watched_dir.mkdir(), plain_dir.mkdir()
+
+    tree, stats = fetch_snapshot(
+        RemoteRepo("o", "r"), watched_dir, fetcher=FakeFetcher(REPO_FILES),
+        on_progress=lambda phase, done, total: events.append((phase, done, total)),
+    )
+    plain_tree, plain_stats = fetch_snapshot(
+        RemoteRepo("o", "r"), plain_dir, fetcher=FakeFetcher(REPO_FILES),
+    )
+
+    # Observing the run cannot alter it — same listing, same fetch set, same
+    # bytes, same sha (D1).
+    assert tree.files == plain_tree.files
+    assert stats == plain_stats
+
+    phases = [phase for phase, _, _ in events]
+    assert phases[0] == "resolving"
+    assert phases.index("listing") < phases.index("fetching")
+
+    listing = [e for e in events if e[0] == "listing"][-1]
+    assert listing[1] == listing[2] == stats.listed_files
+
+    fetching = [e for e in events if e[0] == "fetching"]
+    assert fetching[0][1] == 0, "a phase announces its total before doing any of it"
+    assert fetching[-1][1] == fetching[-1][2] > 0
+    assert [done for _, done, _ in fetching] == list(range(len(fetching)))
+
+    # Every fetched file is accounted for across both fetch phases.
+    linked = [e for e in events if e[0] == "linked"]
+    fetched = fetching[-1][1] + (linked[-1][1] if linked else 0)
+    assert fetched == stats.fetched_files

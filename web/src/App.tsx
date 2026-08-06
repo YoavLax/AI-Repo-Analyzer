@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { analyze, ApiError, version, type AnalyzeRequest, type PlatformFilter, type Report } from "./api";
+import {
+  analyzeStreaming,
+  ApiError,
+  version,
+  type AnalysisProgress,
+  type AnalyzeRequest,
+  type PlatformFilter,
+  type Report,
+} from "./api";
 import AuraBackground from "./components/AuraBackground";
 import CoreTeam from "./components/CoreTeam";
 import ErrorState from "./components/ErrorState";
@@ -53,6 +61,10 @@ export function App() {
   const { theme, toggle } = useTheme();
   const [state, setState] = useState<AppState>(INITIAL_STATE);
   const [localMode, setLocalMode] = useState(false);
+  // Server-reported progress for the in-flight analysis; null until its first
+  // event arrives, which is what tells the loading view to stay indeterminate
+  // rather than draw a bar at a number it has not been told yet.
+  const [progress, setProgress] = useState<AnalysisProgress | null>(null);
   // Guards against a stale in-flight request clobbering state after a newer one starts.
   const requestId = useRef(0);
 
@@ -73,6 +85,7 @@ export function App() {
   const runAnalysis = useCallback((request: AnalyzeRequest, options?: { fromHistory?: boolean }) => {
     const id = ++requestId.current;
     setState((prev) => ({ status: "loading", report: prev.report, error: null }));
+    setProgress(null);
     window.scrollTo({ top: 0 });
     if (!options?.fromHistory) {
       const url = urlForRequest(request);
@@ -80,7 +93,11 @@ export function App() {
         window.history.pushState({}, "", url);
       }
     }
-    analyze(request)
+    analyzeStreaming(request, (update) => {
+      // Drop updates from a superseded request, or a slow earlier stream would
+      // drive the bar for the run the user is actually waiting on.
+      if (id === requestId.current) setProgress(update);
+    })
       .then((report) => {
         if (id !== requestId.current) return;
         setState({ status: "idle", report, error: null });
@@ -146,7 +163,7 @@ export function App() {
       </div>
 
       {state.status === "loading" ? (
-        <LoadingSkeleton />
+        <LoadingSkeleton progress={progress} />
       ) : (
         <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-8 px-4 py-16">
           <SearchHero localMode={localMode} onAnalyze={runAnalysis} />
