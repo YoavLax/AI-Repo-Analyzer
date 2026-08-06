@@ -144,6 +144,32 @@ def test_references_resolve_still_flags_escaping_ref_as_unresolvable(tmp_path):
     assert any("does not exist" in d.message for d in diags)
 
 
+def test_references_resolve_flags_escape_into_a_sibling_skill(tmp_path):
+    """Escaping the skill directory without escaping the repository.
+
+    `../other-skill/notes.md` resolves to a file that really exists, so an
+    existence check alone lets it through — but the skill is no longer
+    self-contained, which is exactly what this rule is for. Real shape: three
+    such references in obra/superpowers.
+    """
+    other = tmp_path / "skills" / "using-superpowers" / "references"
+    other.mkdir(parents=True)
+    (other / "codex-tools.md").write_text("# Codex\n", encoding="utf-8")
+
+    skill = tmp_path / "skills" / "writing-skills"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text(
+        "---\nname: writing-skills\ndescription: Use when authoring a new skill.\n---\n\n"
+        "See [codex](../using-superpowers/references/codex-tools.md).\n",
+        encoding="utf-8",
+    )
+    doc = parse(skill / "SKILL.md")
+    sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
+    assert sat == 0.0
+    assert len(diags) == 1
+    assert "resolves outside the skill directory" in diags[0].message
+
+
 def test_reference_rule_weights_after_split():
     assert get_rule("skills.references.resolve").weight == 5
     escape = get_rule("skills.references.escape")

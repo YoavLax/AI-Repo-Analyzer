@@ -1061,10 +1061,15 @@ def check_references_resolve(doc: ParsedDocument, index: ArtifactIndex):
     except ValueError:  # pragma: no cover - a skill doc outside its own root
         return None
 
+    base = skill_dir.as_posix()
     diags: list[Diagnostic] = []
     for ref in refs:
-        target = posixpath.normpath(posixpath.join(skill_dir.as_posix(), ref))
-        if posixpath.isabs(ref) or target == ".." or target.startswith("../"):
+        target = posixpath.normpath(posixpath.join(base, ref))
+        # "Inside the skill directory", not merely "inside the repository":
+        # `../sibling-skill/notes.md` stays under the root but still breaks
+        # packaging, and it is the common shape of this mistake.
+        inside = target == base or target.startswith(f"{base}/")
+        if posixpath.isabs(ref) or not inside:
             # No absolute target path in the message: the checkout location
             # must not leak into report output.
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
