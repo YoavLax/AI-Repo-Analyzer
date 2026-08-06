@@ -100,7 +100,11 @@ def test_applyto_declared_violated_on_fixture():
     rel_path, diag = diags[0]  # per-file diagnostics are (rel_path, Diagnostic)
     assert rel_path == PurePosixPath(".github/instructions/python.instructions.md")
     assert isinstance(diag, Diagnostic)
-    assert diag.severity == Severity.ERROR
+    # INFO, not ERROR: VS Code lists applyTo as Required: No and documents the
+    # omitted case as working ("you can still add them manually to a chat
+    # request"), so a repository shipping manual attachments is following the
+    # documentation, not breaking it.
+    assert diag.severity == Severity.INFO
 
 
 def test_applyto_declared_not_applicable_without_instructions(tmp_path):
@@ -119,13 +123,20 @@ def test_applyto_declared_per_file_mean(tmp_path):
     assert diags[0][0] == PurePosixPath(".github/instructions/b.instructions.md")
 
 
-def test_applyto_declared_counts_unparseable_file_as_violation(tmp_path):
+def test_unparseable_instructions_file_is_reported_by_the_parse_rule(tmp_path):
+    """A file whose frontmatter does not parse is an ERROR — but it is a
+    parsing error, not a scoping one. `applyto.declared` stays silent about it
+    rather than describing a broken file as one that merely lacks a glob."""
     _write(tmp_path, ".github/instructions/bad.instructions.md",
            "---\napplyTo: [oops\n---\n\n# Broken\n")
-    sat, diags = scoping.check_applyto_declared(_index(tmp_path))
+    index = _index(tmp_path)
+
+    sat, diags = scoping.check_instructions_parses(index)
     assert sat == 0.0
     assert diags[0][0] == PurePosixPath(".github/instructions/bad.instructions.md")
     assert diags[0][1].severity == Severity.ERROR
+
+    assert scoping.check_applyto_declared(index) is None
 
 
 def test_applyto_declared_empty_string_is_violation(tmp_path):

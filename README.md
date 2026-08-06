@@ -44,7 +44,7 @@ Eight pillars, 104 rules ([full catalog](docs/RULES.md)):
 | Foundation | 20 | Entry points exist and parse; `AGENTS.md`↔`CLAUDE.md` bridge; length and structure; section coverage; `@import` resolution |
 | Instruction quality | 15 | Specific, justified, exemplified directives; no boilerplate, stale markers, or credential-shaped strings; commands and links resolve |
 | Context scoping | 12 | Path-scoped `*.instructions.md`; the missing-`applyTo` silent no-op; dead globs; monolith detection |
-| Skills | 15 | The full [Agent Skills](https://agentskills.io) validation set: frontmatter, the dirname-match silent-drop trap, description quality (0–100), token budgets, CWE-59 reference escapes, progressive disclosure |
+| Skills | 15 | The full [Agent Skills](https://agentskills.io) validation set: frontmatter, the spec's dirname-match requirement, description quality (0–100), token budgets, broken file references, progressive disclosure |
 | Agents & prompts | 10 | Custom-agent frontmatter, description quality, least-privilege `tools`, prompt→agent reference resolution |
 | Verification | 12 | Documented **and resolvable** test/build/lint commands; CI; iterate-until-green and show-evidence instructions; hooks schema |
 | Tooling | 8 | MCP config validity and secret indirection; setup scripts; devcontainer; version pins |

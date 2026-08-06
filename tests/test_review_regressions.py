@@ -248,17 +248,26 @@ def test_markdown_table_cells_escape_pipes(tmp_path):
         assert len(cells) == 5, f"broken table row: {row!r}"
 
 
-def test_settings_unknown_key_renders_error_finding(tmp_path):
+def test_settings_unknown_key_is_informational_not_an_error(tmp_path):
+    """An unrecognized settings key must not cap a grade.
+
+    The settings reference documents well over a hundred top-level keys and
+    adds more each release, so `KNOWN_CLAUDE_SETTINGS_KEYS` is a snapshot that
+    goes stale by design: a repository pinned to a newer Claude Code than our
+    last research pass would otherwise be handed an ERROR for using a key that
+    is perfectly real. The page never calls an unknown key a failure.
+    """
     index = _repo(tmp_path, {
         ".claude/settings.json": '{"permissions": {}, "myCustomKey": 1}\n',
     })
     card = score(index)
     data = to_json_dict(index, card)
-    error_rules = {f["rule_id"] for f in data["findings"] if f["severity"] == "error"}
-    assert card.has_error_finding
-    assert "safety.settings.valid" in error_rules, (
-        "gate fires => an error-severity finding must be visible to fix"
-    )
+    by_rule = {f["rule_id"]: f["severity"] for f in data["findings"]}
+    assert by_rule.get("safety.settings.known-keys") == "info"
+    # Nothing from the settings-validity rule at all: the file parses.
+    # (The bare fixture trips other rules, so `card.has_error_finding` says
+    # nothing about this one.)
+    assert "safety.settings.valid" not in by_rule
 
 
 # --- AgentCompass (v0.3.0) review regressions ---------------------------------

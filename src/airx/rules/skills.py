@@ -5,8 +5,8 @@ Vendored and adapted from AgentEval (github.com/YoavLax/AgentEval,
 MIT licensed), per plan.md open question 2 (resolved: vendor rather than
 depend on the `agenteval` package — see `airx/config.py` for the rationale).
 The v0.2.0 additions (plan-v2-fable.md §4.2) complete the AgentEval port:
-namespace-free names, the dedicated CWE-59 escape rule, progressive-disclosure
-usage, load triggers, script hygiene, and description coherence.
+namespace-free names, progressive-disclosure usage, load triggers, script
+hygiene, and description coherence.
 
 Every rule function returns `(satisfaction, diagnostics)` or `None`:
   * `None` means the rule does not apply to this file (e.g. there is no
@@ -122,8 +122,8 @@ _BASE64_CANDIDATE_RE = re.compile(r"[A-Za-z0-9+/]{64,}={0,2}")
 # ("/docs/..."), which are the standard web convention for "relative to the
 # site's domain root" (e.g. a docs page meant to resolve against
 # https://example.com) rather than a reference to a file bundled with this
-# skill \u2014 flagging them as an escaping/broken filesystem reference is a
-# false positive, not a real CWE-59 concern.
+# skill \u2014 resolving them as filesystem paths produces findings about files
+# nobody ever meant to ship.
 _MD_LINK_RE = md.MD_LINK_RE
 # Path-charset-only capture: excludes backticks, quotes, brackets, and angle
 # brackets so "...input file: [`x.csv`](x.csv)" (an ordinary sentence ending
@@ -328,6 +328,7 @@ def _read_text_defensively(path: Path) -> str | None:
     why="Without a name the skill cannot be indexed or invoked by agent platforms.",
     fix="Add a `name:` field to the SKILL.md frontmatter matching the directory name.",
     effort="additive",
+    spec_quote="The required `name` field: Must be 1-64 characters",
 )
 def check_name_required(doc: ParsedDocument):
     if doc.frontmatter.get("name") is None:
@@ -365,6 +366,7 @@ def check_name_type(doc: ParsedDocument):
     why="Names over the 64-character spec limit may be rejected or truncated by loaders.",
     fix="Shorten the skill name to 64 characters or fewer.",
     effort="mechanical",
+    spec_quote="The required `name` field: Must be 1-64 characters",
 )
 def check_name_max_length(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -384,6 +386,7 @@ def check_name_max_length(doc: ParsedDocument):
     why="Names outside lowercase letters, numbers, and hyphens are rejected by spec-conformant loaders.",
     fix="Rename the skill using lowercase letters, numbers, and hyphens only.",
     effort="mechanical",
+    spec_quote="May only contain unicode lowercase alphanumeric characters (`a-z`, `0-9`) and hyphens (`-`)",
 )
 def check_name_charset(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -406,6 +409,7 @@ def check_name_charset(doc: ParsedDocument):
     why="Leading, trailing, or doubled hyphens violate the name grammar in the spec.",
     fix="Remove the leading, trailing, or consecutive hyphens from the name.",
     effort="mechanical",
+    spec_quote="Must not start or end with a hyphen (`-`) ... Must not contain consecutive hyphens (`--`)",
 )
 def check_name_hyphens(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -449,12 +453,28 @@ def check_name_reserved(doc: ParsedDocument):
     id="skills.name.dirname-match", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
     applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#name-field",
-    summary="`name` matches the parent directory name. VS Code/Copilot silently drops mismatches.",
-    why="VS Code/Copilot silently fails to load a skill whose name does not match its directory.",
+    summary="`name` matches the parent directory name, as the spec requires.",
+    why="A mismatched name fails spec validation, so the skill cannot be packaged or "
+        "uploaded through the Skills API even where an editor tolerates it.",
     fix="Rename the directory or the `name` field so the two match exactly.",
     effort="mechanical",
+    spec_quote="Must match the parent directory name",
 )
 def check_name_dirname_match(doc: ParsedDocument):
+    """Spec conformance, stated plainly.
+
+    The consequence used to be given as "VS Code/Copilot silently fails to
+    load this skill", which attributes to a name/directory mismatch what the
+    VS Code page actually says about *invalid characters*: "Names with invalid
+    characters cause the skill to silently fail to load." Claude Code is
+    explicit that it does not behave that way at all — "In a personal or
+    project skill, `name` sets only the display label shown in skill listings,
+    and the command still comes from the directory or file name."
+
+    What survives is the requirement itself, which is unambiguous, plus the
+    place it genuinely bites: `skills-ref validate` and the packaging and
+    upload paths that enforce the spec.
+    """
     name = doc.frontmatter.get("name")
     if not isinstance(name, str) or not name:
         return None
@@ -462,8 +482,8 @@ def check_name_dirname_match(doc: ParsedDocument):
     if parent and parent != name:
         return 0.0, [Diagnostic(
             rule_id="skills.name.dirname-match", severity=Severity.ERROR,
-            message=f"Name '{name}' does not match parent directory '{parent}'. "
-                    f"VS Code/Copilot silently fails to load this skill.",
+            message=f"Name '{name}' does not match parent directory '{parent}'; the spec "
+                    f"requires them to be identical.",
         )]
     return 1.0, []
 
@@ -476,6 +496,7 @@ def check_name_dirname_match(doc: ParsedDocument):
     why="Plugin loaders add namespace prefixes automatically, so '/' or ':' in a name breaks resolution.",
     fix="Remove the namespace separator and use the bare skill name.",
     effort="mechanical",
+    spec_quote="May only contain unicode lowercase alphanumeric characters (`a-z`, `0-9`) and hyphens (`-`)",
 )
 def check_name_no_namespace(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -504,6 +525,7 @@ def check_name_no_namespace(doc: ParsedDocument):
     why="Agents route to skills solely via the description; without one the skill is never selected.",
     fix="Add a `description:` field explaining what the skill does and when to use it.",
     effort="additive",
+    spec_quote="The required `description` field: Must be 1-1024 characters",
 )
 def check_description_required(doc: ParsedDocument):
     if doc.frontmatter.get("description") is None:
@@ -540,6 +562,7 @@ def check_description_type(doc: ParsedDocument):
     why="An empty description gives the routing model nothing to match against.",
     fix="Write a description covering what the skill does and when to use it.",
     effort="authoring",
+    spec_quote="The required `description` field: Must be 1-1024 characters",
 )
 def check_description_non_empty(doc: ParsedDocument):
     if "description" not in doc.frontmatter:
@@ -559,6 +582,7 @@ def check_description_non_empty(doc: ParsedDocument):
     why="Descriptions over the 1024-character spec limit blow the always-loaded metadata budget.",
     fix="Trim the description to the essentials and move detail into the body.",
     effort="authoring",
+    spec_quote="The required `description` field: Must be 1-1024 characters",
 )
 def check_description_max_length(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -1028,18 +1052,21 @@ def check_scripts_help(doc: ParsedDocument):
     id="skills.references.resolve", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
     applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#file-references",
-    summary="Relative file references in the body resolve to existing files inside the skill directory.",
+    summary="Relative file references in the body resolve to existing files in the repository.",
     why="A referenced file that does not exist sends the agent on a failing detour at load time.",
-    fix="Fix the reference path or add the missing file inside the skill directory.",
+    fix="Fix the reference path or add the missing file.",
     effort="mechanical",
 )
 def check_references_resolve(doc: ParsedDocument, index: ArtifactIndex):
     """Existence check for body references, answered from the file listing.
 
-    A reference that escapes the skill directory can never exist *inside* it,
-    so it is reported here as unresolvable ('resolves outside the skill
-    directory') in addition to the dedicated CWE-59 rule
-    `skills.references.escape`, which owns the escape finding itself.
+    Existence is the whole claim. An earlier version also failed a reference
+    for *leaving* the skill directory, on the theory that skills must be
+    self-contained — but the Agent Skills spec's file-references section says
+    only "use relative paths from the skill root" and "Keep file references one
+    level deep from SKILL.md", neither of which forbids `../`. Sibling-skill
+    cross-links and a single shared file two skills both read are ordinary,
+    deliberate authoring; failing them told maintainers to duplicate content.
 
     Existence is decided against `index.tree`, never against the filesystem.
     A clone-free snapshot fetches only part of a large repository, and a
@@ -1064,46 +1091,21 @@ def check_references_resolve(doc: ParsedDocument, index: ArtifactIndex):
     base = skill_dir.as_posix()
     diags: list[Diagnostic] = []
     for ref in refs:
-        target = posixpath.normpath(posixpath.join(base, ref))
-        # "Inside the skill directory", not merely "inside the repository":
-        # `../sibling-skill/notes.md` stays under the root but still breaks
-        # packaging, and it is the common shape of this mistake.
-        inside = target == base or target.startswith(f"{base}/")
-        if posixpath.isabs(ref) or not inside:
-            # No absolute target path in the message: the checkout location
-            # must not leak into report output.
+        if posixpath.isabs(ref):
+            # An absolute path is machine-specific by construction: it cannot
+            # be checked against a repository listing, and it does not travel
+            # with the skill. No absolute path in the message either — the
+            # checkout location must not leak into report output.
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
-                                     message=f"Reference '{ref}' resolves outside the skill directory."))
+                                     message=f"Reference '{ref}' is an absolute path; "
+                                             f"use a path relative to SKILL.md."))
             continue
+        target = posixpath.normpath(posixpath.join(base, ref))
+        if target.startswith(".."):
+            continue  # leaves the repository; nothing in the listing to check
         if not index.tree.resolves(target):
             diags.append(Diagnostic(rule_id="skills.references.resolve", severity=Severity.ERROR,
                                      message=f"Referenced file does not exist in the scanned tree: '{ref}'."))
-    return (1.0, []) if not diags else (0.0, diags)
-
-
-@rule(
-    id="skills.references.escape", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
-    applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
-    source=RuleSource.SPEC, doc_url="https://agentskills.io/specification#file-references",
-    summary="No file reference resolves outside the skill directory (CWE-59 link following).",
-    why="A reference escaping the skill directory (CWE-59) can read unrelated or sensitive files and breaks packaging.",
-    fix="Move the referenced file inside the skill directory and reference it with a relative path.",
-    effort="mechanical",
-)
-def check_references_escape(doc: ParsedDocument):
-    refs = _extract_references(doc.body)
-    if not refs:
-        return None
-    skill_dir = doc.path.parent.resolve()
-    diags: list[Diagnostic] = []
-    for ref in refs:
-        target = (skill_dir / ref).resolve()
-        if not target.is_relative_to(skill_dir):
-            diags.append(Diagnostic(
-                rule_id="skills.references.escape", severity=Severity.ERROR,
-                message=f"Reference '{ref}' escapes the skill directory; "
-                        f"skills must be self-contained (CWE-59).",
-            ))
     return (1.0, []) if not diags else (0.0, diags)
 
 
@@ -1117,15 +1119,22 @@ def check_references_escape(doc: ParsedDocument):
     effort="mechanical",
 )
 def check_references_depth(doc: ParsedDocument):
+    """Nesting depth *below* SKILL.md, which is the whole of the spec's advice:
+    "Keep file references one level deep from `SKILL.md`. Avoid deeply nested
+    reference chains."
+
+    A `../` reference is not deep — it is sideways, and the spec says nothing
+    about it. This rule used to report those too, which made a link to a
+    sibling skill look like a layout defect it is not.
+    """
     refs = _extract_references(doc.body)
     if not refs:
         return None
     diags = []
     for ref in refs:
         if ref.startswith(".."):
-            diags.append(Diagnostic(rule_id="skills.references.depth", severity=Severity.WARNING,
-                                     message=f"Reference '{ref}' traverses above the skill directory."))
-        elif _reference_depth(ref) > 1:
+            continue
+        if _reference_depth(ref) > 1:
             diags.append(Diagnostic(rule_id="skills.references.depth", severity=Severity.WARNING,
                                      message=f"Reference '{ref}' is more than one level deep from SKILL.md."))
     return (1.0, []) if not diags else (0.0, diags)
@@ -1205,6 +1214,7 @@ def check_skills_present(index):
     why="A skill that fails UTF-8 or YAML parsing is silently skipped by loaders.",
     fix="Fix the encoding or frontmatter YAML syntax reported in the diagnostic.",
     effort="mechanical",
+    spec_quote="The `SKILL.md` file must contain YAML frontmatter followed by Markdown content.",
 )
 def check_skills_parse(index):
     total = len(index.skills) + len(index.skill_parse_errors)

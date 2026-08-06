@@ -67,7 +67,8 @@ def check_mcp_present(index: ArtifactIndex):
 @rule(
     id="tooling.mcp.valid", pillar=Pillar.TOOLING, scope=RuleScope.REPO,
     applicability=Applicability.QUALITY, weight=5, severity=Severity.ERROR,
-    source=RuleSource.SPEC,
+    source=RuleSource.ADVISORY,  # allowlisted: JSON that does not parse, or a
+                                 # server entry declaring neither transport
     doc_url="https://code.visualstudio.com/docs/copilot/chat/mcp-servers",
     summary="MCP configs are valid JSON and every server declares 'command' or 'url'.",
     why="A malformed MCP config silently disables every server it declares.",

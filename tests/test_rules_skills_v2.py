@@ -1,11 +1,13 @@
 """Unit tests for the v0.2.0 skills-pillar additions (plan-v2-fable.md §4.2):
 
-  skills.name.no-namespace, skills.references.escape, skills.disclosure.used,
+  skills.name.no-namespace, skills.disclosure.used,
   skills.disclosure.load-triggers, skills.scripts.non-interactive,
   skills.scripts.help, skills.coherence,
 
-plus the metadata backfill (why/fix/effort/platforms) on every skills rule and
-the references.resolve weight split (6 -> 5, with escape at 6).
+plus the metadata backfill (why/fix/effort/platforms) on every skills rule.
+
+`skills.references.escape` was part of that release and has since been
+withdrawn; what remains of it here is the test that keeps it withdrawn.
 """
 from pathlib import Path
 
@@ -18,7 +20,6 @@ from airx.rules.registry import EFFORT_RANK, all_rules, get_rule
 
 NEW_RULE_IDS = {
     "skills.name.no-namespace",
-    "skills.references.escape",
     "skills.disclosure.used",
     "skills.disclosure.load-triggers",
     "skills.scripts.non-interactive",
@@ -82,75 +83,29 @@ def test_no_namespace_not_applicable_when_name_missing_or_non_string(tmp_path):
     assert rules.check_name_no_namespace(empty) is None
 
 
-# --- skills.references.escape ------------------------------------------------
+# --- skills.references.* -----------------------------------------------------
 
-def test_references_escape_passes_for_in_dir_reference(tmp_path):
-    # Existence is irrelevant here — only escaping matters.
-    doc = _doc(
-        tmp_path, "refs-ok",
-        "name: refs-ok\ndescription: Uses references when asked.",
-        body="\nSee [notes](references/notes.md) and more.\n",
-    )
-    sat, diags = rules.check_references_escape(doc)
-    assert sat == 1.0
-    assert diags == []
+def test_references_escape_rule_no_longer_exists():
+    """`skills.references.escape` was withdrawn, and must not come back.
 
-
-def test_references_escape_flags_escaping_reference(tmp_path):
-    doc = _doc(
-        tmp_path, "refs-bad",
-        "name: refs-bad\ndescription: Uses references when asked.",
-        body="\nSee [outside](../../outside.txt) and [inside](notes.md).\n",
-    )
-    sat, diags = rules.check_references_escape(doc)
-    assert sat == 0.0
-    assert len(diags) == 1
-    assert diags[0].severity == Severity.ERROR
-    assert "../../outside.txt" in diags[0].message
+    It shipped as a SPEC-sourced ERROR at the skills pillar's highest weight,
+    citing agentskills.io/specification#file-references for the claim that a
+    skill must be self-contained, and CWE-59 for the claim that a `../` link is
+    a link-following vulnerability. That section says exactly two things --
+    "use relative paths from the skill root" and "Keep file references one
+    level deep from `SKILL.md`" -- and neither is a prohibition. Across a
+    35-repository corpus the rule produced 533 findings, every one of them an
+    instruction to duplicate a deliberately shared file.
+    """
+    assert "skills.references.escape" not in {r.id for r in all_rules()}
 
 
-def test_references_escape_not_applicable_without_references(tmp_path):
-    doc = _doc(tmp_path, "norefs", "name: norefs\ndescription: Does something when asked.")
-    assert rules.check_references_escape(doc) is None
+def test_references_resolve_allows_a_link_to_a_sibling_skill(tmp_path):
+    """The shape the withdrawn rule existed to punish, now expected to pass.
 
-
-def test_references_escape_ignores_root_relative_url_paths(tmp_path):
-    """A '/docs/...'-style link is the standard web convention for a
-    site-root-relative URL (e.g. https://nextjs.org/docs/...), not a
-    filesystem reference \u2014 it must not be flagged as escaping the skill
-    directory (CWE-59)."""
-    doc = _doc(
-        tmp_path, "refs-weburl",
-        "name: refs-weburl\ndescription: Uses references when asked.",
-        body="\nSee [the glossary](/docs/app/glossary) and [notes](notes.md).\n",
-    )
-    sat, diags = rules.check_references_escape(doc)
-    assert sat == 1.0
-    assert diags == []
-
-
-def test_references_resolve_still_flags_escaping_ref_as_unresolvable(tmp_path):
-    """The split keeps resolve reporting an escaping ref (it cannot exist inside
-    the dir), so the historical two-diagnostic behavior is preserved."""
-    doc = _doc(
-        tmp_path, "refs",
-        "name: refs\ndescription: Uses references when asked.",
-        body="\nSee [missing](scripts/missing.sh) and [outside](../../outside.txt).\n",
-    )
-    sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
-    assert sat == 0.0
-    assert len(diags) == 2
-    assert any("resolves outside the skill directory" in d.message for d in diags)
-    assert any("does not exist" in d.message for d in diags)
-
-
-def test_references_resolve_flags_escape_into_a_sibling_skill(tmp_path):
-    """Escaping the skill directory without escaping the repository.
-
-    `../other-skill/notes.md` resolves to a file that really exists, so an
-    existence check alone lets it through — but the skill is no longer
-    self-contained, which is exactly what this rule is for. Real shape: three
-    such references in obra/superpowers.
+    Two skills sharing one reference file is ordinary authoring: the spec
+    neither forbids it nor mentions it. The file exists, so there is nothing
+    to report. Real shape: three such references in obra/superpowers.
     """
     other = tmp_path / "skills" / "using-superpowers" / "references"
     other.mkdir(parents=True)
@@ -165,17 +120,64 @@ def test_references_resolve_flags_escape_into_a_sibling_skill(tmp_path):
     )
     doc = parse(skill / "SKILL.md")
     sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_references_resolve_flags_a_missing_file(tmp_path):
+    doc = _doc(
+        tmp_path, "refs",
+        "name: refs\ndescription: Uses references when asked.",
+        body="\nSee [missing](scripts/missing.sh).\n",
+    )
+    sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
     assert sat == 0.0
     assert len(diags) == 1
-    assert "resolves outside the skill directory" in diags[0].message
+    assert diags[0].severity == Severity.ERROR
+    assert "does not exist" in diags[0].message
+
+
+def test_references_resolve_ignores_root_relative_url_paths(tmp_path):
+    """A '/docs/...'-style link is the web convention for a site-root-relative
+    URL (e.g. https://nextjs.org/docs/...), not a filesystem reference, so it
+    is never extracted in the first place."""
+    doc = _doc(
+        tmp_path, "refs-weburl",
+        "name: refs-weburl\ndescription: Uses references when asked.",
+        body="\nSee [the glossary](/docs/app/glossary.md).\n",
+    )
+    assert rules.check_references_resolve(doc, build_index(fs.scan(tmp_path))) is None
+
+
+def test_references_resolve_ignores_targets_outside_the_repository(tmp_path):
+    """`../../outside.txt` leaves the scanned tree, so the listing cannot say
+    whether it exists. Silence is the honest answer, not an error."""
+    doc = _doc(
+        tmp_path, "refs-out",
+        "name: refs-out\ndescription: Uses references when asked.",
+        body="\nSee [outside](../../outside.txt).\n",
+    )
+    sat, diags = rules.check_references_resolve(doc, build_index(fs.scan(tmp_path)))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_references_depth_ignores_parent_traversal(tmp_path):
+    """`../` is sideways, not deep. The spec's advice is about nesting below
+    SKILL.md; reporting a sibling link as a depth problem overstates it."""
+    doc = _doc(
+        tmp_path, "refs-depth",
+        "name: refs-depth\ndescription: Uses references when asked.",
+        body="\nSee [sibling](../other/notes.md) and [deep](a/b/c.md).\n",
+    )
+    sat, diags = rules.check_references_depth(doc)
+    assert sat == 0.0
+    assert len(diags) == 1
+    assert "a/b/c.md" in diags[0].message
 
 
 def test_reference_rule_weights_after_split():
     assert get_rule("skills.references.resolve").weight == 5
-    escape = get_rule("skills.references.escape")
-    assert escape.weight == 6
-    assert escape.severity == Severity.ERROR
-    assert escape.source == RuleSource.SPEC
 
 
 # --- skills.disclosure.used --------------------------------------------------
@@ -354,7 +356,7 @@ def test_new_rules_are_registered():
 
 def test_every_skills_rule_carries_backfilled_metadata():
     skills_rules = [r for r in all_rules() if r.id.startswith("skills.")]
-    assert len(skills_rules) == 37  # 30 pre-existing + 7 additions
+    assert len(skills_rules) == 36  # 30 pre-existing + 7 additions - references.escape
     for meta in skills_rules:
         assert meta.why, f"{meta.id} is missing why="
         assert meta.fix, f"{meta.id} is missing fix="

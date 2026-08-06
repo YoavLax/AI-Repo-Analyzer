@@ -18,14 +18,32 @@ from pathlib import PurePosixPath
 #: A fenced code block, capturing its body.
 CODE_BLOCK_RE = re.compile(r"^(?:```|~~~)[^\n]*\n(.*?)^(?:```|~~~)\s*$", re.MULTILINE | re.DOTALL)
 
-#: A *relative* Markdown link target. Absolute (`/x`), external
-#: (`https://`, `mailto:`) and pure `#anchor` links never match.
-MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\((?!https?://|mailto:|/)([^)\s#]+)(?:#[^)]*)?\)")
+#: A *relative* Markdown link target. Absolute (`/x`) and pure `#anchor` links
+#: never match, and neither does anything carrying a URI scheme.
+#:
+#: The scheme guard is general (`[a-zA-Z][a-zA-Z0-9+.-]*:`) rather than a list
+#: of known schemes. Enumerating `https?://|mailto:` let `file:///Users/x/R.md`
+#: through as a *relative* target, and then `DIRECTIVE_RE` matched the `file:`
+#: inside it a second time — one link in one repository produced three separate
+#: findings, two of them about paths that were never written.
+MD_LINK_RE = re.compile(
+    r"!?\[[^\]]*\]\((?![a-zA-Z][a-zA-Z0-9+.\-]*:|/)([^)\s#]+)(?:#[^)]*)?\)"
+)
+
+#: Any Markdown link, whatever its target. Used to blank link syntax out of the
+#: text before directive scanning, so a link's URL can never be read as prose.
+ANY_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 
 #: A `source:` / `file:` / `include:` directive pointing at a companion file.
 DIRECTIVE_RE = re.compile(
     r"(?:source|file|include):\s*([A-Za-z0-9_.\-/]+\.[a-zA-Z0-9]+)", re.IGNORECASE,
 )
+
+#: An inline code span. Backtick-quoted text is how authors *mention* a path
+#: without linking it, which is why Claude Code's own import parser skips code
+#: spans ("To mention a path in your CLAUDE.md without importing it, wrap it in
+#: backticks" — code.claude.com/docs/en/memory#import-additional-files).
+CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)*?\1", re.DOTALL)
 
 #: Prose that gates *when* a companion file should be read, e.g.
 #: "Read docs/testing.md when writing new tests."
@@ -44,16 +62,44 @@ def strip_code_blocks(body: str) -> str:
     return CODE_BLOCK_RE.sub("", body)
 
 
+def strip_code(body: str) -> str:
+    """`body` with fenced blocks *and* inline code spans removed.
+
+    Both are how authors quote syntax rather than invoke it. Claude Code's
+    import parser draws the same line, and a path in backticks is the
+    documented way to name a file without loading it.
+    """
+    return CODE_SPAN_RE.sub(" ", strip_code_blocks(body))
+
+
+def is_file_like(ref: str) -> bool:
+    """Whether `ref` names a file rather than a placeholder.
+
+    `[the guide](URL)`, `[see](TBD)` and `[docs](path/to/file)` are templates
+    and prose, not companion files: resolving them produces findings about
+    paths no author ever intended to exist. A real reference carries an
+    extension on its last segment, or is a directory.
+    """
+    if ref.endswith("/"):
+        return True
+    return "." in ref.rsplit("/", 1)[-1]
+
+
 def extract_references(body: str) -> list[str]:
     """Companion-file references in `body`: relative Markdown links plus
     `source:`/`file:`/`include:` directives, de-duplicated, first-seen order.
 
-    Fenced code blocks are stripped first (see `strip_code_blocks`).
+    Fenced code blocks and inline code spans are stripped first, link syntax is
+    blanked out before directives are scanned, and targets that do not name a
+    file are dropped (see `strip_code`, `ANY_LINK_RE`, `is_file_like`).
     """
-    body = strip_code_blocks(body)
+    body = strip_code(body)
     refs: list[str] = []
     refs.extend(MD_LINK_RE.findall(body))
-    refs.extend(DIRECTIVE_RE.findall(body))
+    # Directives are prose. Scanning link syntax for them reads a link's URL as
+    # if the author had written it as a directive.
+    refs.extend(DIRECTIVE_RE.findall(ANY_LINK_RE.sub(" ", body)))
+    refs = [r for r in refs if is_file_like(r)]
     seen: set[str] = set()
     unique: list[str] = []
     for ref in refs:

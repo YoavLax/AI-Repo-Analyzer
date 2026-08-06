@@ -104,6 +104,21 @@ When adding a rule:
    this project traces back to a specific piece of documentation or a
    demonstrable failure mode. "Because it seems like good practice" is not
    sufficient justification on its own.
+   For a `SPEC`-sourced `error`, also paste the sentence into `spec_quote`.
+   The registry **enforces** this at import time, and the quote is published
+   in `docs/RULES.md` so a maintainer we report against can check us. Open
+   the page and copy the words; do not summarise from memory. If no sentence
+   states the requirement, the rule is not `SPEC`-sourced — decide what it
+   really is (`ADVISORY` at `warning`/`info`), or drop it.
+
+   This gate exists because three rules failed it in production.
+   `skills.references.escape` asserted that the Agent Skills spec required a
+   skill to be self-contained and called a `../` link a CWE-59
+   link-following vulnerability. The cited section says two things — "use
+   relative paths from the skill root" and "Keep file references one level
+   deep from `SKILL.md`" — and neither is a prohibition. It ran at `error`,
+   weight 6, and produced 533 findings across 35 repositories, every one of
+   them advice to duplicate a deliberately shared file.
 4. Add unit tests covering the pass case, the fail case, and (if the rule can
    be `None`) the not-applicable case.
 5. If the rule changes scores materially, add or update a fixture repo under

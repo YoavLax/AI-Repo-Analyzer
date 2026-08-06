@@ -357,6 +357,7 @@ def _hook_file_problems(artifact: Artifact) -> list[str]:
     why="A malformed hook file is silently ignored, so the verification it was meant to enforce never runs.",
     fix="Make each .github/hooks/*.json declare `version: 1` and a `hooks` object whose entries have `type: \"command\"` and a `bash` or `powershell` command.",
     effort="mechanical",
+    spec_quote="Create a JSON file with a `hooks` object containing arrays of hook commands for each event type.",
 )
 def check_hooks_schema(index: ArtifactIndex):
     # Contents rule: only hook files whose bytes are in this snapshot.

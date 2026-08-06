@@ -127,40 +127,79 @@ def check_scoped_files_present(index: ArtifactIndex):
 
 
 @rule(
-    id="scoping.applyto.declared", pillar=Pillar.SCOPING, scope=RuleScope.REPO,
-    applicability=Applicability.QUALITY, weight=6, severity=Severity.ERROR,
+    id="scoping.instructions.parses", pillar=Pillar.SCOPING, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.SPEC, doc_url=_DOC_URL_INSTRUCTIONS,
     platforms=(Platform.COPILOT,),
-    why="An instructions file without applyTo frontmatter never auto-applies to any file.",
-    fix="Add an applyTo frontmatter key declaring the glob(s) the instructions govern.",
+    why="An instructions file whose frontmatter does not parse cannot be loaded, "
+        "so none of its guidance ever reaches the assistant.",
+    fix="Repair the YAML frontmatter fences in the .instructions.md file so the file parses.",
     effort="mechanical",
-    summary="Every *.instructions.md declares a non-empty applyTo frontmatter scope.",
+    summary="Every *.instructions.md decodes and its YAML frontmatter parses.",
+    spec_quote="Instructions files are Markdown files with the `.instructions.md` extension. "
+               "The optional YAML frontmatter header controls when the instructions are applied",
 )
-def check_applyto_declared(index: ArtifactIndex):
-    # Contents rule: an instructions file whose bytes are outside this snapshot
-    # cannot be said to lack applyTo — nobody looked.
+def check_instructions_parses(index: ArtifactIndex):
+    # Contents rule: only instructions files whose bytes are in this snapshot.
     instructions = index.analyzed(index.instructions)
     if not instructions:
-        return None  # N/A: no instructions files to scope
+        return None  # N/A: no instructions files
     sats: list[float] = []
     diags: list[tuple] = []
     for a in instructions:  # sorted by rel_path (discovery order)
         if a.doc is None:
             sats.append(0.0)
             diags.append((a.rel_path, Diagnostic(
-                rule_id="scoping.applyto.declared", severity=Severity.ERROR,
-                message=f"{a.rel_path.name} could not be parsed, so no applyTo scope "
-                        f"applies: {a.parse_error}",
+                rule_id="scoping.instructions.parses", severity=Severity.ERROR,
+                message=f"{a.rel_path.name} failed to parse: {a.parse_error}",
             )))
-            continue
+        else:
+            sats.append(1.0)
+    return sum(sats) / len(sats), diags
+
+
+@rule(
+    id="scoping.applyto.declared", pillar=Pillar.SCOPING, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY, doc_url=_DOC_URL_INSTRUCTIONS,
+    platforms=(Platform.COPILOT,),
+    why="Without applyTo the file is opt-in: it reaches the model only when someone "
+        "attaches it to a request by hand.",
+    fix="If the instructions are meant to load on their own, add an applyTo glob; "
+        "if they are a manual attachment, no change is needed.",
+    effort="mechanical",
+    summary="Every *.instructions.md declares a non-empty applyTo frontmatter scope.",
+)
+def check_applyto_declared(index: ArtifactIndex):
+    """Auto-apply coverage, at INFO.
+
+    This was a SPEC-sourced ERROR at weight 6 until the page it cites was
+    actually read. VS Code lists `applyTo` as Required: No and documents the
+    omitted case as a working configuration: "If not specified, the
+    instructions are not applied automatically, but you can still add them
+    manually to a chat request." A repository that ships manually-attached
+    instruction sets is following the documentation, and was being handed an
+    error that capped its grade for it.
+
+    The parse-failure branch that used to live here moved to
+    `scoping.instructions.parses`, where an ERROR is still the honest severity.
+    """
+    # Contents rule: an instructions file whose bytes are outside this snapshot
+    # cannot be said to lack applyTo — nobody looked.
+    instructions = [a for a in index.analyzed(index.instructions) if a.doc is not None]
+    if not instructions:
+        return None  # N/A: no parseable instructions files to scope
+    sats: list[float] = []
+    diags: list[tuple] = []
+    for a in instructions:  # sorted by rel_path (discovery order)
         if _applyto_globs(a.doc.frontmatter):
             sats.append(1.0)
         else:
             sats.append(0.0)
             diags.append((a.rel_path, Diagnostic(
-                rule_id="scoping.applyto.declared", severity=Severity.ERROR,
-                message=f"{a.rel_path.name} declares no applyTo frontmatter; without it "
-                        f"the file never auto-applies to any path.",
+                rule_id="scoping.applyto.declared", severity=Severity.INFO,
+                message=f"{a.rel_path.name} declares no applyTo glob, so it never loads "
+                        f"automatically; it applies only when attached to a request by hand.",
             )))
     return sum(sats) / len(sats), diags
 
