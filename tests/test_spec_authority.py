@@ -29,7 +29,23 @@ from airx import fs
 
 # --- the gate ----------------------------------------------------------------
 
-def test_spec_sourced_error_without_a_quote_is_rejected_at_registration():
+@pytest.fixture
+def scratch_registry():
+    """Registration mutates a module-global. Without this, a rule declared by a
+    test stays in `all_rules()` for the rest of the process — scored against
+    every repository every later test analyzes, in a way that depends on test
+    ordering."""
+    from airx.rules import registry as reg
+
+    before = dict(reg._REGISTRY)
+    try:
+        yield
+    finally:
+        reg._REGISTRY.clear()
+        reg._REGISTRY.update(before)
+
+
+def test_spec_sourced_error_without_a_quote_is_rejected_at_registration(scratch_registry):
     with pytest.raises(ValueError, match="spec_quote"):
         @rule(
             id="test.unsupported.claim", pillar=Pillar.SKILLS, scope=RuleScope.REPO,
@@ -41,7 +57,9 @@ def test_spec_sourced_error_without_a_quote_is_rejected_at_registration():
             return 1.0, []
 
 
-def test_spec_sourced_error_with_a_quote_registers():
+def test_spec_sourced_error_with_a_quote_registers(scratch_registry):
+    from airx.rules.registry import get_rule
+
     @rule(
         id="test.supported.claim", pillar=Pillar.SKILLS, scope=RuleScope.REPO,
         applicability=Applicability.QUALITY, weight=1, severity=Severity.INFO,
@@ -50,6 +68,8 @@ def test_spec_sourced_error_with_a_quote_registers():
     )
     def _check(index):  # pragma: no cover - registration is the assertion
         return 1.0, []
+
+    assert get_rule("test.supported.claim").severity is Severity.INFO
 
 
 def test_every_spec_sourced_error_rule_cites_a_sentence():
