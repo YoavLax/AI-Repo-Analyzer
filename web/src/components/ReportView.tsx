@@ -96,55 +96,80 @@ export function ReportView({
             <div className="loading-bar h-full w-1/3 bg-brand" />
           </div>
         )}
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3">
-          <button
-            type="button"
-            onClick={onReset}
-            className="focus-ring flex items-center gap-2 rounded-md"
-            aria-label="Back to AgentCompass home"
-          >
-            <Logo size={28} markOnly />
-            <span className="text-sm font-bold">
-              <span className="text-gray-900 dark:text-white">Agent</span>
-              <span className="text-gradient">Compass</span>
+        {/* Narrow screens stack this into three bands \u2014 identity + theme, the
+            platform segments, then the re-analyze field \u2014 rather than letting
+            five items wrap wherever they happen to land, which stranded the
+            theme toggle alone on a fourth line. `order` puts the toggle back at
+            the far end on wide screens without rendering it twice. */}
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
+            <button
+              type="button"
+              onClick={onReset}
+              className="focus-ring flex shrink-0 items-center gap-2 rounded-md"
+              aria-label="Back to AgentCompass home"
+            >
+              <Logo size={28} markOnly />
+              <span className="text-sm font-bold">
+                <span className="text-gray-900 dark:text-white">Agent</span>
+                <span className="text-gradient">Compass</span>
+              </span>
+            </button>
+            <span className="hidden text-gray-300 dark:text-gray-600 sm:inline" aria-hidden="true">
+              /
             </span>
-          </button>
-          <span className="hidden text-gray-300 dark:text-gray-600 sm:inline" aria-hidden="true">
-            /
-          </span>
-          <span
-            className="min-w-0 max-w-full truncate font-mono text-sm text-gray-700 dark:text-night-text"
-            title={`${meta.source}${meta.ref ? `@${meta.ref}` : ""}`}
+            <span
+              className="min-w-0 truncate font-mono text-sm text-gray-700 dark:text-night-text"
+              title={`${meta.source}${meta.ref ? `@${meta.ref}` : ""}`}
+            >
+              {meta.source}
+              {meta.ref ? `@${meta.ref}` : ""}
+            </span>
+          </div>
+
+          <div className="order-2 shrink-0 sm:order-3">
+            <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+          </div>
+
+          <form
+            onSubmit={submit}
+            className="order-3 flex w-full flex-wrap items-center gap-2 sm:order-2 sm:ml-auto sm:w-auto sm:flex-nowrap"
           >
-            {meta.source}
-            {meta.ref ? `@${meta.ref}` : ""}
-          </span>
-          <form onSubmit={submit} className="ml-auto flex flex-wrap items-center gap-2">
-            <PlatformToggle value={platform} onChange={setPlatform} disabled={loading} />
+            <PlatformToggle
+              value={platform}
+              onChange={setPlatform}
+              disabled={loading}
+              // Stretched into an even segmented control on the mobile row it
+              // owns. Scoped to this instance on purpose: `flex-1` has a 0
+              // basis, so applying it inside the component would also make the
+              // hero's shrink-to-fit toggle render three equal-width segments.
+              className="w-full [&>button]:flex-1 sm:w-auto sm:[&>button]:flex-none"
+            />
             <label htmlFor="reanalyze-input" className="sr-only">
               Analyze another repository
             </label>
-            <input
-              id="reanalyze-input"
-              type="text"
-              value={reInput}
-              onChange={(event) => setReInput(event.target.value)}
-              placeholder={meta.mode === "local-path" ? "another/path" : "owner/repo"}
-              autoComplete="off"
-              spellCheck={false}
-              disabled={loading}
-              className="focus-ring h-9 w-40 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-night-border dark:bg-night-card dark:text-night-text sm:w-56"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="focus-ring inline-flex h-9 items-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading && <Spinner />}
-              {loading ? "Analyzing\u2026" : "Analyze"}
-            </button>
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <input
+                id="reanalyze-input"
+                type="text"
+                value={reInput}
+                onChange={(event) => setReInput(event.target.value)}
+                placeholder={meta.mode === "local-path" ? "another/path" : "owner/repo"}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={loading}
+                className="focus-ring h-9 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-night-border dark:bg-night-card dark:text-night-text sm:w-56 sm:flex-none"
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="focus-ring inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {loading && <Spinner />}
+                {loading ? "Analyzing\u2026" : "Analyze"}
+              </button>
+            </div>
           </form>
-          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </header>
 

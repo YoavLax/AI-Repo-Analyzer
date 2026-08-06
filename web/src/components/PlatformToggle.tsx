@@ -31,7 +31,7 @@ export function PlatformToggle({ value, onChange, disabled, className }: Platfor
             disabled={disabled}
             aria-pressed={active}
             onClick={() => onChange(option.value)}
-            className={`focus-ring rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+            className={`focus-ring whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
               active
                 ? "bg-gray-100 text-gray-900 dark:bg-night-border dark:text-night-text"
                 : "text-gray-500 hover:text-gray-700 dark:text-night-muted dark:hover:text-night-text"
