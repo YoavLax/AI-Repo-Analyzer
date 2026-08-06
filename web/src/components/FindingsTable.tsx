@@ -126,15 +126,19 @@ export function FindingsTable({ findings }: FindingsTableProps) {
                 : "repository";
             return (
               <li key={`${finding.rule_id}-${finding.path ?? ""}-${finding.line ?? 0}-${index}`}>
-                {/* Every track is minmax(0, …): a grid item defaults to
-                    min-width:auto, so without the 0 floor a long rule id
-                    refuses to shrink and spills into the next column. */}
+                {/* Each row is its own grid, so the leading tracks are fixed
+                    widths rather than `auto`: an auto track sizes to that row's
+                    own content, which made every column start further right on
+                    a "Warning" row than on an "Info" one. Fixed tracks cannot
+                    be overflowed here because the cells below wrap with
+                    overflow-wrap:anywhere, and the flexible track carries the
+                    minmax(0, …) floor a grid item needs to shrink at all. */}
                 <button
                   type="button"
                   onClick={() => hasDetails && setExpanded(isOpen ? null : index)}
                   aria-expanded={hasDetails ? isOpen : undefined}
                   disabled={!hasDetails}
-                  className={`focus-ring grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 rounded-lg px-2 py-3 text-left sm:grid-cols-[auto_minmax(0,11rem)_minmax(0,1fr)_auto] ${
+                  className={`focus-ring grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 rounded-lg px-2 py-3 text-left sm:grid-cols-[6.5rem_11rem_minmax(0,1fr)_auto] ${
                     hasDetails ? "cursor-pointer hover:bg-gray-50 dark:hover:bg-night-border/40" : "cursor-default"
                   }`}
                 >
