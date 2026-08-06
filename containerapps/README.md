@@ -167,9 +167,9 @@ az identity create -g agent-compass-rg -n agentcompass-gha
 # 2. Trust GitHub's OIDC tokens for pushes to main on this repo
 az identity federated-credential create \
   --identity-name agentcompass-gha --resource-group agent-compass-rg \
-  --name gha-main-push \
+  --name gha-production-environment \
   --issuer "https://token.actions.githubusercontent.com" \
-  --subject "repo:YoavLax/agent-compass:ref:refs/heads/main" \
+  --subject "repo:YoavLax@48318330/agent-compass@1316443332:environment:production" \
   --audiences "api://AzureADTokenExchange"
 
 # 3. Least-privilege RBAC: push images, update the container app — nothing else
@@ -179,6 +179,16 @@ rgId=$(az group show -n agent-compass-rg --query id -o tsv)
 az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role AcrPush --scope $acrId
 az role assignment create --assignee-object-id $principalId --assignee-principal-type ServicePrincipal --role "Container Apps Contributor" --scope $rgId
 ```
+
+The `deploy` job in `ci.yml` sets `environment: production`, so GitHub issues
+an **environment-scoped** OIDC subject, not the more commonly documented
+`repo:<owner>/<repo>:ref:refs/heads/<branch>` form — and this org has
+immutable-ID subject claims enabled, so `<owner>`/`<repo>` above are actually
+`<owner>@<owner_id>`/`<repo>@<repo_id>`. Get the exact subject GitHub is
+presenting from a failed login's error message (`AADSTS700213: No matching
+federated identity record found for presented assertion subject '...'`)
+rather than guessing the format — a mismatch here is the most likely reason
+`azure/login` fails after everything else is configured correctly.
 
 Then set three repo secrets (an account with admin/write access to the repo
 is required — an OAuth token merely holding the `repo` scope is not enough if
@@ -192,10 +202,10 @@ gh secret set AZURE_TENANT_ID -b "$tenantId"
 gh secret set AZURE_SUBSCRIPTION_ID -b "99c945ee-7bba-4387-8206-b3178293cfb0"
 ```
 
-If a new branch or environment needs to deploy too, add another
-`federated-credential` with a matching `--subject` (e.g.
-`repo:YoavLax/agent-compass:environment:production`) rather than widening the
-existing one.
+If another job/environment needs to deploy too, add another
+`federated-credential` with a matching `--subject` rather than widening the
+existing one — read the exact subject off a failed run's `AADSTS700213` error
+rather than guessing it.
 
 ## High availability — what's in place and why
 
