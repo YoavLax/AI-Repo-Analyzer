@@ -29,8 +29,10 @@ export function TopFixes({ plan }: TopFixesProps) {
                 {entry.effort}
               </span>
             </div>
-            <p className="text-sm text-gray-700 dark:text-night-text">{entry.action}</p>
-            <p className="mt-auto font-mono text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-sm text-gray-700 [overflow-wrap:anywhere] dark:text-night-text">
+              {entry.action}
+            </p>
+            <p className="mt-auto font-mono text-xs text-gray-400 [overflow-wrap:anywhere] dark:text-gray-500">
               {entry.rule_id}
             </p>
           </article>

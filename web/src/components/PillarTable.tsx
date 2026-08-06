@@ -11,11 +11,11 @@ function pct(ratio: number | null): number {
 
 function MiniBar({ label, ratio }: { label: string; ratio: number | null }) {
   return (
-    <div className="flex items-center gap-1.5" title={`${label}: ${ratio === null ? "n/a" : `${Math.round(pct(ratio))}%`}`}>
-      <span className="w-7 text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
+    <div className="flex shrink-0 items-center gap-1.5" title={`${label}: ${ratio === null ? "n/a" : `${Math.round(pct(ratio))}%`}`}>
+      <span className="w-7 shrink-0 text-[11px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
         {label}
       </span>
-      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-gray-100 dark:bg-night-border">
+      <div className="h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-night-border">
         <div
           className="h-full rounded-full bg-gray-400 dark:bg-gray-500"
           style={{ width: `${pct(ratio)}%` }}
@@ -36,11 +36,11 @@ export function PillarTable({ pillars }: PillarTableProps) {
           return (
             <li
               key={pillar.id}
-              className="-mx-2 grid grid-cols-[7.5rem_1fr] items-center gap-x-4 gap-y-2 rounded-lg p-2 transition-colors hover:bg-gray-50 dark:hover:bg-night-border/30 sm:grid-cols-[7.5rem_1fr_auto]"
+              className="-mx-2 grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] items-center gap-x-4 gap-y-2 rounded-lg p-2 transition-colors hover:bg-gray-50 dark:hover:bg-night-border/30 sm:grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto]"
             >
-              <div>
+              <div className="min-w-0">
                 <p
-                  className={`text-sm font-medium capitalize ${
+                  className={`text-sm font-medium capitalize [overflow-wrap:anywhere] ${
                     scored ? "text-gray-900 dark:text-night-text" : "text-gray-400 dark:text-gray-600"
                   }`}
                 >
@@ -50,7 +50,7 @@ export function PillarTable({ pillars }: PillarTableProps) {
               </div>
 
               {scored ? (
-                <div className="flex items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div
                     role="meter"
                     aria-valuemin={0}
@@ -64,7 +64,7 @@ export function PillarTable({ pillars }: PillarTableProps) {
                       style={{ width: `${pct(pillar.score)}%` }}
                     />
                   </div>
-                  <span className="w-10 text-right text-sm font-medium text-gray-700 dark:text-night-text">
+                  <span className="w-10 shrink-0 text-right text-sm font-medium text-gray-700 dark:text-night-text">
                     {Math.round(pct(pillar.score))}
                   </span>
                 </div>
@@ -75,7 +75,7 @@ export function PillarTable({ pillars }: PillarTableProps) {
               )}
 
               {scored && (
-                <div className="col-start-2 flex gap-4 sm:col-start-3">
+                <div className="col-start-2 flex flex-wrap gap-x-4 gap-y-1 sm:col-start-3">
                   <MiniBar label="pre" ratio={pillar.presence_ratio} />
                   <MiniBar label="qua" ratio={pillar.quality_ratio} />
                 </div>

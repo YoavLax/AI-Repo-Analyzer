@@ -24,6 +24,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Protocol
@@ -50,6 +51,20 @@ REQUEST_TIMEOUT_SECONDS = 30
 #: limits, and each worker now reuses one connection (see `UrllibFetcher`), so
 #: raising it adds sockets rather than TLS handshakes.
 FETCH_CONCURRENCY = 16
+
+#: Ingest phases reported through `ProgressHook`, in the order they occur.
+PHASE_RESOLVING = "resolving"
+PHASE_LISTING = "listing"
+PHASE_FETCHING = "fetching"
+PHASE_LINKED = "linked"
+
+#: Progress side channel: `(phase, done, total)`, where `total` is 0 while the
+#: work is not yet countable. Strictly informational — nothing it reports feeds
+#: back into the snapshot, so determinism (D1) holds whether or not a hook is
+#: passed, and a run with a hook returns byte-identical output to one without.
+#: The counts are real: `total` for the fetch phases is the selected file set,
+#: itself a pure function of the sha-pinned tree listing.
+ProgressHook = Callable[[str, int, int], None]
 
 #: Files probe.py reads by content; everything else it derives from names.
 #: `.airx.yml` is included so a web analysis honors the same repository
@@ -414,6 +429,7 @@ def fetch_snapshot(
     max_fetch_files: int = MAX_FETCH_FILES,
     max_file_bytes: int = MAX_FILE_BYTES,
     max_total_bytes: int = MAX_TOTAL_BYTES,
+    on_progress: ProgressHook | None = None,
 ) -> tuple[RepoTree, SnapshotStats]:
     """Materialize a clone-free snapshot of `remote` into `workdir`.
 
@@ -424,7 +440,17 @@ def fetch_snapshot(
     this online scan will fetch individually over the network; self-hosted
     deployments can raise them via the `MAX_FETCH_FILES`, `MAX_FILE_BYTES`,
     and `MAX_TOTAL_BYTES` env vars (see `airx_server.config`).
+
+    `on_progress`, when given, is called with `(phase, done, total)` as the
+    snapshot is assembled. It is called from this thread only — the fetch pool's
+    completion loop runs here, not in its workers — and never influences what is
+    fetched (see `ProgressHook`).
     """
+    def _emit(phase: str, done: int, total: int) -> None:
+        if on_progress is not None:
+            on_progress(phase, done, total)
+
+    _emit(PHASE_RESOLVING, 0, 0)
     fetcher = fetcher if fetcher is not None else UrllibFetcher(max_file_bytes=max_file_bytes)
     owner = urllib.parse.quote(remote.owner, safe="")
     repo = urllib.parse.quote(remote.repo, safe="")
@@ -472,6 +498,7 @@ def fetch_snapshot(
         if len(listed) >= DEFAULT_MAX_FILES:
             break
     listed.sort(key=lambda p: p.as_posix())
+    _emit(PHASE_LISTING, len(listed), len(listed))
 
     # The caps are a *budget*, not a cliff. A single oversized icon set used to
     # abort the whole analysis, which made every large repository a support
@@ -520,10 +547,12 @@ def fetch_snapshot(
     # each file lands at its own path, so completion order cannot be observed.
     total = 0
 
-    def _materialize(paths: tuple[PurePosixPath, ...]) -> None:
+    def _materialize(paths: tuple[PurePosixPath, ...], phase: str) -> None:
         nonlocal total
+        _emit(phase, 0, len(paths))
         if not paths:
             return
+        done = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=FETCH_CONCURRENCY) as pool:
             futures = [pool.submit(_fetch_one, rel) for rel in paths]
             try:
@@ -535,12 +564,16 @@ def fetch_snapshot(
                     target = workdir / str(rel)
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(content)
+                    # After the write, so a reported file is one that is really
+                    # in the snapshot rather than one merely in flight.
+                    done += 1
+                    _emit(phase, done, len(paths))
             except BaseException:
                 for future in futures:
                     future.cancel()
                 raise
 
-    _materialize(tuple(selected))
+    _materialize(tuple(selected), PHASE_FETCHING)
 
     # Second pass: the companion Markdown docs linked from the instruction files
     # just fetched. `quality.references.pointers-not-snippets` reads those docs'
@@ -559,7 +592,7 @@ def fetch_snapshot(
         else:
             referenced.append(rel)
             total_planned += size
-    _materialize(tuple(referenced))
+    _materialize(tuple(referenced), PHASE_LINKED)
     skipped.sort(key=lambda s: s.path.as_posix())
 
     tree = RepoTree(root=workdir, files=tuple(listed))

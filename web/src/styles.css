@@ -78,6 +78,48 @@
   .loading-bar {
     animation: loading-bar 1.1s ease-in-out infinite;
   }
+  /* Loading-scene art. SVG children rotate about their own box, not the
+     viewBox origin, so fill-box + center is required for .art-spin/.art-sweep
+     to turn in place. */
+  .art-anim {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .art-spin {
+    animation: art-spin 7s linear infinite;
+  }
+  .art-sweep {
+    animation: art-spin 2.6s linear infinite;
+  }
+  .art-bob {
+    animation: art-bob 2.8s ease-in-out infinite;
+  }
+  .art-tilt {
+    animation: art-tilt 3.4s ease-in-out infinite;
+  }
+  .art-blink {
+    animation: art-blink 1.5s steps(1, end) infinite;
+  }
+  .art-pulse {
+    animation: art-pulse 2.2s ease-in-out infinite;
+  }
+  /* Each scene fades up as it replaces the previous one. */
+  .scene-in {
+    animation: scene-in 420ms ease-out both;
+  }
+  /* Highlight travelling along the filled part of the progress bar. */
+  .progress-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    animation: loading-bar 1.6s ease-in-out infinite;
+    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  }
   /* Faint dot grid for the hero's ambient backdrop; masked so it fades at
      the edges instead of hard-cutting off. */
   .bg-dot-grid {
@@ -113,6 +155,64 @@
   }
 }
 
+@keyframes art-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes art-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes art-tilt {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+@keyframes art-blink {
+  0%,
+  88% {
+    opacity: 1;
+  }
+  89%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes art-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @keyframes aura-drift {
   0%,
   100% {
@@ -132,8 +232,22 @@
   .animate-pulse,
   .animate-spin,
   .loading-bar,
-  .aura-blob {
+  .aura-blob,
+  .art-spin,
+  .art-sweep,
+  .art-bob,
+  .art-tilt,
+  .art-blink,
+  .art-pulse,
+  .scene-in,
+  .progress-sheen::after {
     animation: none !important;
+  }
+  /* The scene still swaps for reduced-motion users — only its entrance moves —
+     so the element must not be left at the keyframe's starting opacity. */
+  .scene-in {
+    opacity: 1;
+    transform: none;
   }
   * {
     transition-duration: 0.01ms !important;
