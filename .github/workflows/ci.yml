@@ -113,14 +113,14 @@ jobs:
           echo "score=${{ steps.airx.outputs.score }} grade=${{ steps.airx.outputs.grade }}"
 
   deploy:
-    name: Deploy to Render
+    name: Deploy to Azure Container Apps
     runs-on: ubuntu-latest
     # Every other job, not just `test`: a green matrix with a broken frontend
     # build or an unbuildable image must never reach production.
     needs: [test, web, docker, helm, dogfood, action-selftest]
     # Pushes to main only. `pull_request` runs share this workflow, and a PR
-    # from a fork would otherwise deploy unreviewed code with the production
-    # token.
+    # from a fork would otherwise deploy unreviewed code with production
+    # credentials.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # Never cancel a deploy midway — a half-applied release is worse than a
     # queued one. Later pushes wait instead.
@@ -129,102 +129,63 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: read
+      # Required to mint the OIDC token azure/login exchanges for an Azure AD
+      # token — no client secret is stored anywhere for this.
+      id-token: write
     environment:
       name: production
-      # Derived below rather than written out: a hardcoded literal drifted from
-      # the real deploy target once already, and the deploy still "succeeded"
-      # while the smoke test probed a hostname that did not exist.
-      url: ${{ steps.target.outputs.url }}
+      url: https://agentcompass.ashymeadow-b5411f47.eastus.azurecontainerapps.io
     env:
-      RENDER_API: https://api.render.com/v1
-      # Held as a secret, so Actions masks it everywhere it would be printed.
-      # Diagnostics below therefore identify the service by the name and URL
-      # read back from the API rather than by echoing this id, which would only
-      # ever render as `***`.
-      SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+      RESOURCE_GROUP: agent-compass-rg
+      ACR_NAME: agentcompassacr
+      CONTAINERAPP_NAME: agentcompass
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve the service and its URL
-        id: target
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-        run: |
-          if [ -z "$SERVICE_ID" ] || [ -z "$RENDER_API_KEY" ]; then
-            echo "::error::Repository secrets RENDER_SERVICE_ID and RENDER_API_KEY must both be set."
-            echo "See deploy/README.md for where to find them."
-            exit 1
-          fi
-          # Render assigns the hostname (it appends a suffix when a name is
-          # already taken), so it is read back from the API rather than guessed
-          # from render.yaml. Render itself stays the single source of truth.
-          svc=$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" \
-            "$RENDER_API/services/$SERVICE_ID")
-          url=$(printf '%s' "$svc" | jq -r '.serviceDetails.url // empty')
-          test -n "$url" || {
-            echo "::error::RENDER_SERVICE_ID resolved to a service with no URL."
-            echo "Only web services have one — check the id is the srv-... of the"
-            echo "web service and not a worker, cron job, or private service."
-            exit 1
-          }
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "deploying $(printf '%s' "$svc" | jq -r .name) -> $url"
+      - name: Log in to Azure (OIDC, no client secret)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Trigger the deploy
-        id: deploy
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+      - name: Build and push image
+        id: image
         run: |
-          # The API is used rather than a deploy hook because a hook returns
-          # nothing that can be followed. render.yaml sets autoDeploy: false, so
-          # this job is the only thing that releases — the push alone must not
-          # bypass the test gate above.
-          id=$(curl -fsS -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
-            -H 'content-type: application/json' -d '{"clearCache":"do_not_clear"}' \
-            "$RENDER_API/services/$SERVICE_ID/deploys" | jq -r .id)
-          test -n "$id" && [ "$id" != null ] || { echo "::error::deploy was not accepted"; exit 1; }
-          echo "id=$id" >> "$GITHUB_OUTPUT"
-          echo "deploy $id started"
+          # Tag with the commit sha rather than the pyproject version alone so
+          # every push produces a distinct, traceable tag and always forces a
+          # new revision — two commits that forget to bump the version would
+          # otherwise silently redeploy the same image.
+          version=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          tag="${version}-${GITHUB_SHA::12}"
+          image="$ACR_NAME.azurecr.io/agentcompass:$tag"
+          az acr login --name "$ACR_NAME"
+          docker build -t "$image" .
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for the deploy to go live
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          DEPLOY_ID: ${{ steps.deploy.outputs.id }}
+      - name: Update the container app
         run: |
-          # Render keeps serving the previous build until the new one is
-          # healthy, so polling /api/health here would pass against the release
-          # being replaced. Track this specific deploy instead.
-          for _ in $(seq 1 120); do
-            status=$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" \
-              "$RENDER_API/services/$SERVICE_ID/deploys/$DEPLOY_ID" | jq -r .status)
-            echo "  $status"
-            case "$status" in
-              live) exit 0 ;;
-              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
-                echo "::error::deploy $DEPLOY_ID ended as '$status' — see the Render dashboard's build log."
-                exit 1 ;;
-            esac
-            sleep 10
-          done
-          echo "::error::deploy $DEPLOY_ID did not go live within 20 minutes."
-          exit 1
+          az containerapp update \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$CONTAINERAPP_NAME" \
+            --image "${{ steps.image.outputs.image }}"
 
       - name: Smoke-test the deployed release
         env:
-          APP_URL: ${{ steps.target.outputs.url }}
+          APP_URL: https://agentcompass.ashymeadow-b5411f47.eastus.azurecontainerapps.io
         run: |
-          # The free instance sleeps after 15 minutes idle and takes 30-60s to
-          # wake, so the first request after a quiet period can time out.
+          # A new revision only takes traffic once its readiness probe passes,
+          # so the first request(s) after `containerapp update` returns may
+          # still hit the outgoing revision briefly during the handoff.
           for _ in $(seq 1 30); do
-            if curl -fsS --max-time 90 "$APP_URL/api/health" >/dev/null 2>&1; then
+            if curl -fsS --max-time 30 "$APP_URL/api/health" >/dev/null 2>&1; then
               ok=1; break
             fi
             sleep 5
           done
           if [ "$ok" != 1 ]; then
-            echo "::error::$APP_URL/api/health never answered, though the deploy reported live."
-            echo "Most likely the container is listening on a port Render did not assign:"
-            echo "it must honour \$PORT (see the CMD in Dockerfile)."
+            echo "::error::$APP_URL/api/health never answered after the update."
             exit 1
           fi
           curl -fsS "$APP_URL/" | grep -qi agentcompass

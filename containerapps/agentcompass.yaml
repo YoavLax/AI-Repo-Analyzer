@@ -1,0 +1,77 @@
+# Azure Container Apps manifest for AgentCompass — applied with:
+#   az containerapp create -g agent-compass-rg -n agentcompass --yaml containerapps/agentcompass.yaml
+# or, to update an existing app:
+#   az containerapp update -g agent-compass-rg -n agentcompass --yaml containerapps/agentcompass.yaml
+#
+# See containerapps/README.md for the full provisioning sequence (env,
+# registry, secrets) this manifest depends on.
+#
+# The `deploy` job in .github/workflows/ci.yml is what actually keeps this app
+# up to date on every push to main — it builds+pushes a `<version>-<sha>`
+# tagged image and runs `az containerapp update --image ...` directly, so the
+# image tag below is only the baseline used the one time this manifest is
+# applied by hand (initial `containerapp create` / disaster recovery).
+location: eastus
+name: agentcompass
+resourceGroup: agent-compass-rg
+type: Microsoft.App/containerApps
+identity:
+  type: SystemAssigned
+properties:
+  managedEnvironmentId: /subscriptions/99c945ee-7bba-4387-8206-b3178293cfb0/resourceGroups/agent-compass-rg/providers/Microsoft.App/managedEnvironments/agentcompass-env
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8080
+      transport: auto
+      allowInsecure: false
+    registries:
+      # Pull auth via the app's system-assigned identity + AcrPull role
+      # (README step 4) — no registry password/imagePullSecret involved.
+      - server: agentcompassacr.azurecr.io
+        identity: system
+    # Set once via `az containerapp secret set` (README step 6) — never put
+    # the token value here. Raises the GitHub API limit from 60 to 5000
+    # req/hour; omitting it is safe, just more rate-limited.
+    secrets:
+      - name: github-token
+  template:
+    containers:
+      - name: agentcompass
+        # Pin an explicit tag — never `:latest` — so rollouts stay
+        # reproducible and revision rollback actually rolls back the image.
+        image: agentcompassacr.azurecr.io/agentcompass:0.3.0
+        env:
+          - name: STATIC_DIR
+            value: /opt/agentcompass/static
+          - name: GITHUB_TOKEN
+            secretRef: github-token
+        resources:
+          cpu: 0.5
+          memory: 1Gi
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          - type: Readiness
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+    scale:
+      # Floor of 2 is the HA baseline: no cold starts, no single point of
+      # failure. Never scales to 0.
+      minReplicas: 2
+      maxReplicas: 5
+      rules:
+        - name: http-scale-rule
+          http:
+            metadata:
+              concurrentRequests: "50"

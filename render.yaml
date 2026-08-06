@@ -4,10 +4,11 @@
 # duplicated from it. The service is stateless, so there is no database, disk,
 # or persistent volume to declare.
 #
-# Deploys are driven by CI, not by Render's own auto-deploy: the `deploy` job in
-# .github/workflows/ci.yml calls a deploy hook only after every test job has
-# passed. `autoDeploy: false` is what stops Render from also releasing straight
-# off the push and bypassing that gate.
+# No longer driven by CI: the `deploy` job in .github/workflows/ci.yml now
+# deploys to Azure Container Apps (see containerapps/) on push to main. This
+# blueprint is kept only as a manual/alternative deploy path — `autoDeploy:
+# false` still applies if you re-enable it, so a push to main won't also
+# trigger a Render release behind CI's back.
 
 services:
   - type: web
