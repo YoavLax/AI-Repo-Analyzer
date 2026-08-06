@@ -285,3 +285,68 @@ def test_conditional_references_not_applicable_without_references(tmp_path):
 def test_conditional_references_not_applicable_without_entrypoint(tmp_path):
     root = _repo(tmp_path, {"README.md": "# hi\n"})
     assert foundation.check_entrypoint_conditional_references(_index(root)) is None
+
+
+# --- foundation.entrypoints.consistent ---------------------------------------
+
+def test_entrypoints_consistent_not_applicable_with_single_entrypoint(tmp_path):
+    root = _repo(tmp_path, {
+        "CLAUDE.md": "# Overview\n\nA web app.\n\n# Tech Stack\n\nPython.\n\n",
+    })
+    assert foundation.check_entrypoints_consistent(_index(root)) is None
+
+
+def test_entrypoints_consistent_not_applicable_when_one_is_pure_bridge(tmp_path):
+    root = _repo(tmp_path, {
+        "CLAUDE.md": "@AGENTS.md\n",
+        "AGENTS.md": (
+            "# Overview\n\nA web app.\n\n"
+            "# Tech Stack\n\nPython.\n\n"
+            "# Guidelines\n\nBe careful.\n\n"
+            "# Structure\n\nsrc/ holds it.\n\n"
+        ),
+    })
+    # CLAUDE.md is a pure `@AGENTS.md` bridge (and near-empty), so only one
+    # non-trivial candidate (AGENTS.md) remains: nothing to compare.
+    assert foundation.check_entrypoints_consistent(_index(root)) is None
+
+
+def test_entrypoints_consistent_satisfied_when_topics_match(tmp_path):
+    content = (
+        "# Overview\n\nA web app.\n\n"
+        "# Tech Stack\n\nPython.\n\n"
+        "# Guidelines\n\nBe careful.\n\n"
+        "# Structure\n\nsrc/ holds it.\n\n"
+        "# Commands\n\npytest\n"
+    )
+    root = _repo(tmp_path, {
+        "CLAUDE.md": content,
+        ".github/copilot-instructions.md": content,
+    })
+    sat, diags = foundation.check_entrypoints_consistent(_index(root))
+    assert sat == 1.0
+    assert diags == []
+
+
+def test_entrypoints_consistent_flags_divergence(tmp_path):
+    root = _repo(tmp_path, {
+        "CLAUDE.md": (
+            "# Overview\n\nA web app.\n\n"
+            "# Tech Stack\n\nPython.\n\n"
+            "# Guidelines\n\nBe careful.\n\n"
+        ),
+        ".github/copilot-instructions.md": (
+            "This document exists.\n"
+            "Nothing special is here.\n"
+            "Just plain lines.\n"
+            "Five lines total here.\n"
+            "End of file.\n"
+        ),
+    })
+    sat, diags = foundation.check_entrypoints_consistent(_index(root))
+    assert sat == 0.0
+    assert len(diags) == 1
+    path, diag = diags[0]
+    assert diag.severity == Severity.INFO
+    assert "CLAUDE.md" in diag.message
+    assert "copilot-instructions.md" in diag.message

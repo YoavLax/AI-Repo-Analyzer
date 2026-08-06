@@ -38,6 +38,7 @@ class AirxConfig:
     profile: str | None = None
     min_score: float | None = None
     fail_on: str | None = None
+    fail_level: int | None = None
     ignore: tuple[str, ...] = ()
     waivers: tuple[Waiver, ...] = ()
 
@@ -86,6 +87,10 @@ def load(root: Path) -> AirxConfig | None:
     if fail_on is not None and fail_on not in ("error", "warning", "never"):
         raise AirxConfigError("'fail_on' must be one of: error, warning, never")
 
+    fail_level = data.get("fail_level")
+    if fail_level is not None and (not isinstance(fail_level, int) or isinstance(fail_level, bool) or not 1 <= fail_level <= 5):
+        raise AirxConfigError("'fail_level' must be an integer from 1 to 5")
+
     ignore_raw = data.get("ignore", [])
     if not isinstance(ignore_raw, list) or not all(isinstance(i, str) for i in ignore_raw):
         raise AirxConfigError("'ignore' must be a list of rule-id prefixes")
@@ -114,6 +119,7 @@ def load(root: Path) -> AirxConfig | None:
         profile=profile,
         min_score=float(min_score) if min_score is not None else None,
         fail_on=fail_on,
+        fail_level=fail_level,
         ignore=tuple(ignore_raw),
         waivers=tuple(waivers),
     )
@@ -131,6 +137,10 @@ min_score: 0
 
 # Severity gate: error | warning | never
 fail_on: error
+
+# Fail `airx analyze` when the maturity level (1-5, derived from the grade)
+# is below this value. Unset disables the gate.
+# fail_level: 3
 
 # Rule-id prefixes to skip entirely (they leave the score's denominator).
 ignore: []

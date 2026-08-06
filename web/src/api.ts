@@ -80,6 +80,10 @@ export interface Score {
   copilot: number | null;
   claude: number | null;
   parity_delta: number | null;
+  /** 1-5, derived from `grade` (config.MATURITY_LEVELS). */
+  maturity_level: number;
+  /** Functional | Documented | Standardized | Optimized | Autonomous */
+  maturity_label: string;
 }
 
 export interface Waiver {

@@ -84,6 +84,9 @@ export function ScoreRing({ score }: ScoreRingProps) {
           </span>
         </div>
       </div>
+      <span className="text-xs font-medium text-gray-500 dark:text-night-muted">
+        Level {score.maturity_level}/5 &mdash; {score.maturity_label}
+      </span>
       {score.grade_capped && (
         <span className="inline-flex items-center gap-1.5 rounded-full bg-warning-50 px-2.5 py-0.5 text-xs font-medium text-warning-700 dark:bg-amber-500/10 dark:text-amber-300">
           <svg viewBox="0 0 12 12" width="12" height="12" fill="currentColor" aria-hidden="true">

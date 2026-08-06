@@ -60,6 +60,11 @@ class ScoreCard:
     expired_waivers: tuple[Waiver, ...] = ()
     ignored_rules: tuple[str, ...] = ()
     today: str | None = None  # the waiver-expiry evaluation date, when one was supplied
+    #: 1-5 maturity level and its label (config.MATURITY_LEVELS), derived from
+    #: `grade` — narrative framing on top of the existing score, not a second
+    #: scoring system.
+    maturity_level: int = 1
+    maturity_label: str = "Functional"
 
 
 def _relpath(index: ArtifactIndex, abs_path) -> PurePosixPath:
@@ -262,6 +267,8 @@ def score(
         grade = config.ERROR_CAPS_GRADE_AT
         grade_capped = True
 
+    maturity_level, maturity_label = config.MATURITY_LEVELS[grade]
+
     return ScoreCard(
         pillars=tuple(pillar_scores), overall=round(overall, 2),
         grade=grade, raw_grade=raw_grade, grade_capped=grade_capped,
@@ -275,4 +282,6 @@ def score(
         expired_waivers=expired,
         ignored_rules=tuple(sorted(set(ignored_prefixes))),
         today=today,
+        maturity_level=maturity_level,
+        maturity_label=maturity_label,
     )

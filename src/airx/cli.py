@@ -1,7 +1,7 @@
 """Command-line entry point.
 
-Exit codes (plan.md §8.4): 0 passed · 1 gate failed (severity or --min-score)
-· 2 input/config error · 3 unexpected internal error.
+Exit codes (plan.md §8.4): 0 passed · 1 gate failed (severity, --min-score, or
+--fail-level) · 2 input/config error · 3 unexpected internal error.
 """
 from __future__ import annotations
 
@@ -95,6 +95,9 @@ def main() -> None:
               help="Severity gate (default: error, or the .airx.yml value).")
 @click.option("--min-score", type=float, default=None,
               help="Exit 1 when the overall score is below N (default: 0, or the .airx.yml value).")
+@click.option("--fail-level", type=click.IntRange(1, 5), default=None,
+              help="Exit 1 when the maturity level (1-5, derived from the grade) is below N "
+                   "(default: no gate, or the .airx.yml value).")
 @click.option("--profile", type=click.Choice(["minimal", "standard", "enterprise"]), default=None,
               help="Weight profile (default: standard, or the .airx.yml value).")
 @click.option("--platform", "platform_name", type=click.Choice(["copilot", "claude", "all"]), default="all",
@@ -118,6 +121,7 @@ def analyze(
     fmt: str,
     fail_on: str | None,
     min_score: float | None,
+    fail_level: int | None,
     profile: str | None,
     platform_name: str,
     ignore_prefixes: tuple[str, ...],
@@ -163,6 +167,7 @@ def analyze(
         effective_profile = profile or cfg.profile or "standard"
         effective_fail_on = fail_on or cfg.fail_on or "error"
         effective_min_score = min_score if min_score is not None else (cfg.min_score or 0.0)
+        effective_fail_level = fail_level if fail_level is not None else cfg.fail_level
         if effective_profile not in ("minimal", "standard", "enterprise"):
             raise click.UsageError(f"unknown profile in .airx.yml: {effective_profile!r}")
 
@@ -197,7 +202,7 @@ def analyze(
             html_output.write_text(to_html(index, card), encoding="utf-8")
             click.echo(f"Report saved to: {html_output}")
 
-        exit_code = _gate_exit_code(card, effective_fail_on, effective_min_score)
+        exit_code = _gate_exit_code(card, effective_fail_on, effective_min_score, effective_fail_level)
     finally:
         if clone_dir is not None:
             _rmtree_force(clone_dir)
@@ -205,8 +210,10 @@ def analyze(
     sys.exit(exit_code)
 
 
-def _gate_exit_code(card, fail_on: str, min_score: float) -> int:
+def _gate_exit_code(card, fail_on: str, min_score: float, fail_level: int | None = None) -> int:
     if card.overall < min_score:
+        return 1
+    if fail_level is not None and card.maturity_level < fail_level:
         return 1
     if fail_on == "never":
         return 0

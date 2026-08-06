@@ -80,6 +80,7 @@ def _render_header(data: dict) -> str:
       <div class="muted">profile: {_e(data["profile"])} · ruleset {_e(data["ruleset_version"])} · tool {_e(data["tool_version"])}</div>
     </div>
   </div>
+  <p class="muted">Maturity: Level {score["maturity_level"]}/5 — {_e(score["maturity_label"])}</p>
   {platform_row}
 </header>
 """

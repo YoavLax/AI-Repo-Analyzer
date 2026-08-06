@@ -23,7 +23,7 @@ from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, Platfo
 
 RuleResult = tuple[float, list[Diagnostic]] | None
 
-RULESET_VERSION = "0.3.0"
+RULESET_VERSION = "0.3.1"
 
 #: Effort classes for the remediation plan, cheapest first (plan-v2-fable.md §3.8).
 EFFORT_RANK: dict[str, int] = {

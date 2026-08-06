@@ -26,6 +26,7 @@ def to_markdown(index: ArtifactIndex, card: ScoreCard) -> str:
     lines.append("")
     cap = f" (capped from {score['raw_grade']})" if score["grade_capped"] else ""
     lines.append(f"**Overall: {score['overall']:.1f}/100 — Grade {score['grade']}**{cap}")
+    lines.append(f"**Maturity: Level {score['maturity_level']}/5 — {score['maturity_label']}**")
     lines.append("")
     if score["copilot"] is not None or score["claude"] is not None:
         lines.append("| Platform | Score |")

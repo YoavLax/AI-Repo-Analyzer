@@ -15,6 +15,7 @@ def to_terminal(index: ArtifactIndex, card: ScoreCard) -> str:
     lines.append("")
     cap_note = f"  (capped from {card.raw_grade})" if card.grade_capped else ""
     lines.append(f"Overall score: {card.overall:.1f}/100   Grade: {card.grade}{cap_note}")
+    lines.append(f"Maturity:      Level {card.maturity_level}/5 — {card.maturity_label}")
     if card.platform == "all":
         if card.copilot is not None or card.claude is not None:
             copilot = f"{card.copilot:.1f}" if card.copilot is not None else "n/a"

@@ -108,6 +108,23 @@ finding caps the overall grade at C, regardless of the arithmetic score. A
 repository with a silently-broken skill or a malformed config file is not
 "agent-ready" no matter how good the rest of its setup looks."""
 
+MATURITY_LEVELS: dict[str, tuple[int, str]] = {
+    "A": (5, "Autonomous"),
+    "B": (4, "Optimized"),
+    "C": (3, "Standardized"),
+    "D": (2, "Documented"),
+    "E": (1, "Functional"),
+    "F": (1, "Functional"),
+}
+"""A named, 1-5 maturity level layered on top of the letter grade, purely for
+narrative framing (CI gating and adoption rollouts read better as "reached
+level 3" than "hit grade C"). Derived from the already-computed `grade` — the
+*final*, possibly error-capped one, not `raw_grade` — so a repository can no
+more claim a high maturity level than it can claim an uncapped grade with a
+silently-broken skill or a committed credential. This is presentation on top
+of the existing score/grade math, not a second scoring system: no new
+thresholds, no new rules, nothing that could disagree with the grade."""
+
 ENTRYPOINT_MAX_LINES_HARD: int = 400
 ENTRYPOINT_IDEAL_LINES: tuple[int, int] = (30, 150)
 

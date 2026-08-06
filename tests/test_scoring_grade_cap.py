@@ -57,3 +57,30 @@ def test_cap_never_upgrades_a_worse_than_c_grade():
 def test_grade_rank_ordering_is_respected():
     from airx.scoring import _GRADE_RANK
     assert _GRADE_RANK["A"] < _GRADE_RANK["B"] < _GRADE_RANK["C"] < _GRADE_RANK["D"] < _GRADE_RANK["E"] < _GRADE_RANK["F"]
+
+
+def test_maturity_level_is_derived_from_the_final_grade():
+    """The maturity level/label must always match config.MATURITY_LEVELS[grade]
+    (the possibly-capped grade), never the uncapped raw_grade."""
+    from airx import config
+    for fixture in ("repo_good_skill", "repo_bad_skill", "repo_near_perfect_one_error", "repo_malformed_yaml"):
+        card = _score(fixture)
+        expected_level, expected_label = config.MATURITY_LEVELS[card.grade]
+        assert card.maturity_level == expected_level, fixture
+        assert card.maturity_label == expected_label, fixture
+
+
+def test_maturity_level_ranges_from_1_to_5():
+    from airx import config
+    levels = {level for level, _ in config.MATURITY_LEVELS.values()}
+    assert levels <= {1, 2, 3, 4, 5}
+
+
+def test_error_capped_repo_cannot_claim_a_maturity_level_above_the_cap():
+    """Mirrors test_repo_with_error_finding_is_capped_at_c_even_if_raw_grade_is_better:
+    the maturity level must reflect the capped grade (C -> level 3), not the raw
+    A/B grade the arithmetic score alone would imply."""
+    card = _score("repo_near_perfect_one_error")
+    assert card.grade == "C"
+    assert card.maturity_level == 3
+    assert card.maturity_label == "Standardized"

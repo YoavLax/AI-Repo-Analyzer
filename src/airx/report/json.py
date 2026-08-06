@@ -113,6 +113,8 @@ def to_json_dict(index: ArtifactIndex, card: ScoreCard) -> dict:
             "copilot": card.copilot,
             "claude": card.claude,
             "parity_delta": card.parity_delta,
+            "maturity_level": card.maturity_level,
+            "maturity_label": card.maturity_label,
         },
         "pillars": pillars,
         "inventory": {

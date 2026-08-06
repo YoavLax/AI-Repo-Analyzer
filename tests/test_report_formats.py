@@ -32,6 +32,9 @@ def test_json_keeps_v01_keys_and_adds_v02_keys():
     assert "artifacts" in data["inventory"] and "repo_facts" in data["inventory"]
     for finding in data["findings"]:
         assert {"why", "fix", "effort"} <= set(finding)
+    # v0.3.0 additions: maturity level/label, derived from grade.
+    assert {"maturity_level", "maturity_label"} <= set(data["score"])
+    assert 1 <= data["score"]["maturity_level"] <= 5
 
 
 def test_all_renderers_are_deterministic():

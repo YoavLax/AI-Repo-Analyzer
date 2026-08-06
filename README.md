@@ -98,6 +98,7 @@ airx analyze . --format json -o report.json     # canonical machine output
 airx analyze . --format sarif -o airx.sarif     # GitHub code scanning
 airx analyze . --format md                      # PR comment / job summary
 airx analyze . --min-score 70 --fail-on error   # quality gate
+airx analyze . --fail-level 3                   # gate on maturity level instead of raw score
 airx compare baseline.json report.json          # exit 1 on regression
 ```
 
@@ -111,6 +112,7 @@ Exit codes: `0` passed · `1` gate failed · `2` input/config error · `3` inter
 profile: standard        # or: minimal, enterprise (weight profiles)
 min_score: 70
 fail_on: error
+fail_level: 3            # optional maturity-level gate (1-5); unset disables it
 ignore:
   - skills.compat.unverified
 waivers:
@@ -248,6 +250,21 @@ already-worse grade.
 | 35–54  | E | Minimal |
 | 0–34   | F | Not agent-ready |
 
+Each grade also carries a named, 1–5 **maturity level** — the same underlying
+number, just framed for adoption tracking and CI gating (`--fail-level N`)
+rather than as a score:
+
+| Grade | Level | Label |
+|---|---|---|
+| A | 5 | Autonomous |
+| B | 4 | Optimized |
+| C | 3 | Standardized |
+| D | 2 | Documented |
+| E, F | 1 | Functional |
+
+The level is derived from the final (possibly error-capped) grade, never the
+raw score — it can't claim a higher maturity than the grade itself allows.
+
 Every rule is tagged by platform, so the report also carries separate
 `copilot` and `claude` scores and their **parity delta** — a rich `AGENTS.md`
 with no `CLAUDE.md` bridge shows up as a Copilot/Claude gap, not just a
@@ -261,6 +278,7 @@ airx analyze PATH [--format terminal|json|md|sarif] [-o FILE]
                   [--profile minimal|standard|enterprise]
                   [--platform copilot|claude|all]
                   [--min-score N] [--fail-on error|warning|never]
+                  [--fail-level 1-5]
                   [--ignore PREFIX]... [--no-waivers] [--today YYYY-MM-DD]
                   [--ref BRANCH|TAG|COMMIT]         # remote PATH only
 airx rules        [--format terminal|json|md]     # the catalog; generates docs/RULES.md
@@ -290,12 +308,14 @@ the composite action installs `ai-repo-analyzer` straight from the pinned
     profile: standard    # minimal | standard | enterprise
     fail-on: error        # error | warning | never
     min-score: 70         # optional overall-score gate
+    fail-level: 3          # optional maturity-level gate (1-5)
 ```
 
-Outputs: `score`, `grade`, `exit-code`. A Markdown report is also written to
-the job summary by default (`job-summary: false` to disable). The step's
-exit code mirrors `airx analyze`'s own gate (§8.4), so a failing score turns
-the job red the same way a failing test would.
+Outputs: `score`, `grade`, `maturity-level`, `maturity-label`, `exit-code`. A
+Markdown report is also written to the job summary by default
+(`job-summary: false` to disable). The step's exit code mirrors `airx
+analyze`'s own gate (§8.4), so a failing score turns the job red the same way
+a failing test would.
 
 ## Not yet implemented
 

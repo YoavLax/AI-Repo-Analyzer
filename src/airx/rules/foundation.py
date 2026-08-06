@@ -8,6 +8,7 @@ and entry-point parseability (plan-v2-fable.md §4.1).
 """
 from __future__ import annotations
 
+import itertools
 import posixpath
 import re
 from pathlib import PurePosixPath
@@ -43,6 +44,19 @@ _SECTION_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("structure", ("structure", "layout", "organization", "director", "folder")),
     ("resources", ("script", "command", "tooling", "resource", "mcp")),
 )
+
+
+def _covered_signals(doc: ParsedDocument) -> frozenset[str]:
+    """The subset of `_SECTION_SIGNALS` names this document satisfies, per the
+    same heading+intro-text keyword match used by `check_sections_coverage`
+    (shared so `foundation.entrypoints.consistent` scores topic coverage
+    identically instead of re-deriving it)."""
+    headings = "\n".join(_SECTION_HEADING_RE.findall(doc.body))
+    haystack = (headings + "\n" + doc.body[:_SECTION_INTRO_CHARS]).lower()
+    return frozenset(
+        name for name, keywords in _SECTION_SIGNALS
+        if any(kw in haystack for kw in keywords)
+    )
 
 # --- foundation.imports.resolve ----------------------------------------------
 
@@ -260,13 +274,9 @@ def check_sections_coverage(index: ArtifactIndex):
     sats: list[float] = []
     diags: list[tuple] = []
     for doc, path in zip(docs, paths):
-        headings = "\n".join(_SECTION_HEADING_RE.findall(doc.body))
-        haystack = (headings + "\n" + doc.body[:_SECTION_INTRO_CHARS]).lower()
-        missing = [
-            name for name, keywords in _SECTION_SIGNALS
-            if not any(kw in haystack for kw in keywords)
-        ]
-        k = total - len(missing)
+        covered = _covered_signals(doc)
+        missing = [name for name, _ in _SECTION_SIGNALS if name not in covered]
+        k = len(covered)
         sats.append(k / total)
         if missing:
             diags.append((path, Diagnostic(
@@ -396,3 +406,80 @@ def check_entrypoint_conditional_references(index: ArtifactIndex):
     if total_refs < config.MIN_REFERENCES_FOR_CONDITIONAL_CHECK or not sats:
         return None  # N/A: nothing to gate
     return sum(sats) / len(sats), diags
+
+
+# =============================================================================
+# foundation.entrypoints.consistent (v0.3.1)
+# =============================================================================
+
+def _is_pure_bridge(doc: ParsedDocument) -> bool:
+    """True when `doc.body`, with every `@path` import token stripped, has
+    fewer than 40 non-whitespace characters left — i.e. it is a mirror
+    (e.g. a CLAUDE.md that is just `@AGENTS.md`) rather than independent
+    content that could meaningfully diverge from what it mirrors."""
+    stripped = _IMPORT_RE.sub("", doc.body)
+    non_whitespace = re.sub(r"\s+", "", stripped)
+    return len(non_whitespace) < 40
+
+
+def _consistency_candidates(index: ArtifactIndex) -> list[tuple[ParsedDocument, PurePosixPath]]:
+    """Entry-point docs eligible for the divergence comparison: the always-on
+    entry points plus the root AGENTS.md (nested AGENTS.md files are legitimately
+    scoped differently and are excluded), minus pure bridges and near-empty stubs
+    (both already penalized by other rules and carry no independent signal)."""
+    candidates = list(zip(_entrypoints(index), index.entrypoint_paths()))
+    for a in index.artifacts:
+        if (a.kind == ArtifactKind.AGENTS_MD and a.rel_path == PurePosixPath("AGENTS.md")
+                and a.doc is not None):
+            candidates.append((a.doc, a.rel_path))
+            break
+    return [
+        (doc, path) for doc, path in candidates
+        if doc.line_count >= 5 and not _is_pure_bridge(doc)
+    ]
+
+
+@rule(
+    id="foundation.entrypoints.consistent", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://github.blog/ai-and-ml/github-copilot/5-tips-for-writing-better-custom-instructions-for-copilot/",
+    summary="Multiple entry points (copilot-instructions.md, AGENTS.md, CLAUDE.md, GEMINI.md) "
+            "cover the same core topics, rather than one being stale.",
+    why="Repos with several instruction files risk one being updated while the others silently "
+        "go stale, so different agents (Copilot vs Claude vs Gemini) end up with contradictory "
+        "or incomplete context.",
+    fix="Review the diverged files and either consolidate into a single AGENTS.md bridged to the "
+        "others, or update the stale file to cover the missing topics.",
+    effort="authoring",
+)
+def check_entrypoints_consistent(index: ArtifactIndex):
+    candidates = _consistency_candidates(index)
+    if len(candidates) < 2:
+        return None  # N/A: single source of truth, or everything else is a bridge/stub
+    signals = [_covered_signals(doc) for doc, _ in candidates]
+    pairs = list(itertools.combinations(range(len(candidates)), 2))
+    consistent = 0
+    diags: list[tuple] = []
+    for i, j in pairs:
+        doc_i, path_i = candidates[i]
+        doc_j, path_j = candidates[j]
+        diff = signals[i] ^ signals[j]
+        if len(diff) < 2:
+            consistent += 1
+            continue
+        only_i = ", ".join(sorted(signals[i] - signals[j])) or "none"
+        only_j = ", ".join(sorted(signals[j] - signals[i])) or "none"
+        if doc_i is index.copilot_instructions:
+            target_path = path_j
+        elif doc_j is index.copilot_instructions:
+            target_path = path_i
+        else:
+            target_path = max(path_i, path_j)
+        diags.append((target_path, Diagnostic(
+            rule_id="foundation.entrypoints.consistent", severity=Severity.INFO,
+            message=f"{doc_i.path.name} and {doc_j.path.name} cover different topics "
+                    f"({doc_i.path.name} only: {only_i}; {doc_j.path.name} only: {only_j}) "
+                    f"— check whether one has gone stale.",
+        )))
+    return consistent / len(pairs), diags

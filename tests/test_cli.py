@@ -44,6 +44,28 @@ def test_analyze_ignore_prefix_removes_findings():
     assert all(not f["rule_id"].startswith("skills.") for f in data["findings"])
 
 
+def test_analyze_fail_level_gate_passes_at_its_own_level():
+    result = _run("analyze", str(FIXTURES / "repo_good_skill"), "--format", "json", "--fail-on", "never")
+    level = json.loads(result.output)["score"]["maturity_level"]
+    gated = _run("analyze", str(FIXTURES / "repo_good_skill"), "--fail-level", str(level), "--fail-on", "never")
+    assert gated.exit_code == 0
+
+
+def test_analyze_fail_level_gate_fails_above_its_own_level():
+    result = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--format", "json", "--fail-on", "never")
+    level = json.loads(result.output)["score"]["maturity_level"]
+    assert level < 5, "fixture must not already be at the max maturity level for this test to be meaningful"
+    gated = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--fail-level", str(level + 1), "--fail-on", "never")
+    assert gated.exit_code == 1
+
+
+def test_analyze_fail_level_gate_applies_even_when_fail_on_never(tmp_path: Path):
+    """--fail-level is an independent gate, same as --min-score: it must still
+    trip even when --fail-on never disables the severity gate."""
+    result = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--fail-level", "5", "--fail-on", "never")
+    assert result.exit_code == 1
+
+
 def test_analyze_html_writes_report_alongside_primary_output(tmp_path):
     html_path = tmp_path / "report.html"
     result = _run("analyze", str(FIXTURES / "repo_bad_skill"), "--fail-on", "never",

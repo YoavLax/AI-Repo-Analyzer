@@ -34,6 +34,10 @@ inputs:
     description: 'Severity gate: error, warning, never.'
     required: false
     default: 'error'
+  fail-level:
+    description: 'Fail the step when the maturity level (1-5, derived from the grade) is below N.'
+    required: false
+    default: ''
   format:
     description: 'Report format written to "output": terminal, json, md, sarif.'
     required: false
@@ -58,6 +62,12 @@ outputs:
   grade:
     description: 'Letter grade for the overall score.'
     value: ${{ steps.analyze.outputs.grade }}
+  maturity-level:
+    description: 'Named 1-5 maturity level derived from the grade.'
+    value: ${{ steps.analyze.outputs.maturity-level }}
+  maturity-label:
+    description: 'Label for the maturity level (Functional, Documented, Standardized, Optimized, Autonomous).'
+    value: ${{ steps.analyze.outputs.maturity-label }}
   exit-code:
     description: 'airx analyze exit code (0 pass, 1 gate failed, 2 input error).'
     value: ${{ steps.analyze.outputs.exit-code }}
@@ -85,6 +95,10 @@ runs:
         if [ -n "${{ inputs.min-score }}" ]; then
           min_score_args=(--min-score "${{ inputs.min-score }}")
         fi
+        fail_level_args=()
+        if [ -n "${{ inputs.fail-level }}" ]; then
+          fail_level_args=(--fail-level "${{ inputs.fail-level }}")
+        fi
         ref_args=()
         if [ -n "${{ inputs.ref }}" ]; then
           ref_args=(--ref "${{ inputs.ref }}")
@@ -101,7 +115,7 @@ runs:
           --platform "${{ inputs.platform }}" \
           --fail-on "${{ inputs.fail-on }}" \
           --format "${{ inputs.format }}" \
-          "${ref_args[@]}" "${output_args[@]}" "${min_score_args[@]}"
+          "${ref_args[@]}" "${output_args[@]}" "${min_score_args[@]}" "${fail_level_args[@]}"
         code=$?
 
         # Independent, non-gating JSON pass to expose score/grade as step
@@ -113,8 +127,12 @@ runs:
           --format json --fail-on never "${ref_args[@]}")
         score=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['overall'])")
         grade=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['grade'])")
+        maturity_level=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['maturity_level'])")
+        maturity_label=$(printf '%s' "$json" | python -c "import json,sys; print(json.load(sys.stdin)['score']['maturity_label'])")
         echo "score=$score" >> "$GITHUB_OUTPUT"
         echo "grade=$grade" >> "$GITHUB_OUTPUT"
+        echo "maturity-level=$maturity_level" >> "$GITHUB_OUTPUT"
+        echo "maturity-label=$maturity_label" >> "$GITHUB_OUTPUT"
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
 
         if [ "${{ inputs.job-summary }}" = "true" ] && [ -n "$GITHUB_STEP_SUMMARY" ]; then

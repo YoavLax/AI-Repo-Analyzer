@@ -60,6 +60,19 @@ def test_bad_fail_on_raises(tmp_path: Path) -> None:
         load(tmp_path)
 
 
+def test_fail_level_loads(tmp_path: Path) -> None:
+    _write(tmp_path, "fail_level: 3\n")
+    cfg = load(tmp_path)
+    assert cfg == AirxConfig(fail_level=3)
+
+
+@pytest.mark.parametrize("bad_value", ["0", "6", "3.5", "true", "'three'"])
+def test_bad_fail_level_raises(tmp_path: Path, bad_value: str) -> None:
+    _write(tmp_path, f"fail_level: {bad_value}\n")
+    with pytest.raises(AirxConfigError):
+        load(tmp_path)
+
+
 def test_expiry_only_evaluated_with_a_date() -> None:
     waiver = Waiver(rule="r", reason="x", expires="2026-01-01")
     assert waiver.is_expired(today=None) is False
