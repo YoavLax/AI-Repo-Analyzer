@@ -153,6 +153,9 @@ def _walk_bypass(node: Any, path: str, hits: list[tuple[str, str]]) -> None:
     why="A committed bypassPermissions default disables the permission system for every contributor's agent runs.",
     fix="Remove bypassPermissions / dangerouslySkipPermissions from committed settings and grant narrow allow rules instead.",
     effort="mechanical",
+    objective_basis="The committed settings set a documented value whose stated effect is to "
+                    "disable the permission system. The value is read from the file, not "
+                    "inferred.",
 )
 def check_permissions_no_bypass(index: ArtifactIndex):
     settings = index.claude_settings
@@ -302,6 +305,8 @@ def check_settings_known_keys(index: ArtifactIndex):
     why="Secrets committed in the settings env block are credentials leaked to everyone with repository access.",
     fix="Replace secret literals in the env block with a secret manager reference or move them to untracked local settings.",
     effort="mechanical",
+    objective_basis="The env block holds a literal matching a published credential shape, "
+                    "committed to version control where every clone can read it.",
 )
 def check_settings_no_secrets(index: ArtifactIndex):
     settings = index.claude_settings
@@ -338,6 +343,10 @@ def check_settings_no_secrets(index: ArtifactIndex):
     fix="Remove the credential, rotate it, and reference it via an environment "
         "variable instead.",
     effort="mechanical",
+    objective_basis="The literal matches a published credential shape (a provider's own "
+                    "documented key prefix and length), and it is committed. Whether it is live "
+                    "is unknowable from the tree; that it is a credential-shaped literal in "
+                    "version control is not.",
 )
 def check_artifacts_no_secrets(index: ArtifactIndex):
     # All Markdown artifacts. `index.skills` docs are SKILL-kind artifacts and

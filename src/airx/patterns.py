@@ -22,12 +22,21 @@ class PatternSpec(NamedTuple):
 
 
 def _is_skill_file(rel: PurePosixPath) -> bool:
-    # `**/skills/<name>/SKILL.md` — the skills directory must be the immediate
-    # grandparent. Superset of `.github/skills`, `.claude/skills`, `.agents/skills`.
-    if rel.name != "SKILL.md":
-        return False
-    parts = rel.parts
-    return len(parts) >= 3 and parts[-3] == "skills"
+    """`**/<name>/SKILL.md` — any directory holding a SKILL.md is a skill.
+
+    "A skill is a directory containing, at minimum, a `SKILL.md` file"
+    (agentskills.io/specification#directory-structure). Nothing requires that
+    directory to sit under one named `skills`, and requiring it meant a
+    top-level `template/SKILL.md` was invisible — AgentCompass saw 17 of the 18
+    skills in anthropics/skills, and every defect in the 18th was unreportable
+    by construction, at the discovery layer where no rule-level check can see it.
+
+    A bare `SKILL.md` at the repository root is still excluded. Its skill
+    directory would be the checkout directory, whose name is a property of the
+    machine rather than the tree, so `skills.name.dirname-match` would score
+    the same commit differently in two clones (determinism contract D1).
+    """
+    return rel.name == "SKILL.md" and len(rel.parts) >= 2
 
 
 def _is_instructions_file(rel: PurePosixPath) -> bool:

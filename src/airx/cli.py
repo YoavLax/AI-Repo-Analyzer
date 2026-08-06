@@ -242,6 +242,7 @@ def rules(fmt: str) -> None:
                 "platforms": [p.value for p in m.platforms], "effort": m.effort,
                 "summary": m.summary, "why": m.why or None, "fix": m.fix or None,
                 "doc_url": m.doc_url, "spec_quote": m.spec_quote or None,
+                "objective_basis": m.objective_basis or None,
             }
             for m in catalog
         ], indent=2))
@@ -269,22 +270,41 @@ def rules(fmt: str) -> None:
                     f"| `{m.id}` | {m.applicability.value} | {m.weight} | {m.severity.value} "
                     f"| {m.source.value} | {platforms} | {m.summary} |"
                 )
-        cited = [m for m in catalog if m.spec_quote]
-        if cited:
+        quoted = [m for m in catalog if m.spec_quote]
+        grounded = [m for m in catalog if m.objective_basis]
+        if quoted or grounded:
             lines.extend([
                 "",
-                "## Spec citations",
+                "## What every error rests on",
                 "",
-                "Every spec-sourced `error` rule names the sentence it rests on. An error "
-                "caps the grade, so the claim behind one has to be quotable rather than "
-                "merely plausible — if no sentence says it, the rule is not spec-sourced.",
+                "An `error` caps the grade, so the claim behind one has to be checkable "
+                "rather than merely plausible. Each names either the sentence it rests on "
+                "or the observation it rests on — never neither, and never both. If no "
+                "sentence says it and nothing observable establishes it, it is not an error.",
+            ])
+        if quoted:
+            lines.extend([
+                "",
+                "### Cited sentences",
                 "",
                 "| ID | Source sentence | Document |",
                 "|---|---|---|",
             ])
-            for m in cited:
+            for m in quoted:
                 quote = m.spec_quote.replace("|", "\\|")
                 lines.append(f"| `{m.id}` | {quote} | [{m.doc_url}]({m.doc_url}) |")
+        if grounded:
+            lines.extend([
+                "",
+                "### Observations",
+                "",
+                "No specification licenses these; the file itself settles them.",
+                "",
+                "| ID | What makes it a fact |",
+                "|---|---|",
+            ])
+            for m in grounded:
+                lines.append(f"| `{m.id}` | {m.objective_basis.replace('|', chr(92) + '|')} |")
         click.echo("\n".join(lines))
         return
 

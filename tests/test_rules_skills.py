@@ -71,11 +71,21 @@ def test_description_person_voice_ignores_when_you_trigger_clause(tmp_path):
     assert diags == []
 
 
-def test_description_person_voice_flags_second_person_outside_trigger_clause(tmp_path):
+def test_description_person_voice_allows_second_person(tmp_path):
+    """No page forbids addressing the reader, and the one this rule cites
+    prescribes an imperative that is a step away from it."""
     doc = _doc(tmp_path, "x", "name: x\ndescription: You can generate reports and validate data.")
+    assert rules.check_description_person_voice(doc) == (1.0, [])
+
+
+def test_description_person_voice_flags_first_person_at_warning(tmp_path):
+    """What is left of the rule: the skill narrating itself. WARNING, because
+    nothing recommends it and nothing forbids it either."""
+    doc = _doc(tmp_path, "y", "name: y\ndescription: I can generate reports and validate data.")
     sat, diags = rules.check_description_person_voice(doc)
     assert sat == 0.0
-    assert diags[0].severity == Severity.ERROR
+    assert diags[0].severity == Severity.WARNING
+    assert "Use this skill when" in diags[0].message
 
 
 def test_description_quality_scores_good_over_bad(tmp_path):

@@ -90,6 +90,8 @@ def _entrypoints(index: ArtifactIndex) -> list[ParsedDocument]:
                           "'@AGENTS.md') describing the project."),
     ),
     effort="additive",
+    objective_basis="None of the four documented entry-point paths exists in the scanned tree. "
+                    "The absence of a file is an observation, not a judgement.",
 )
 def check_entrypoint_present(index: ArtifactIndex):
     has_any = bool(
@@ -353,6 +355,9 @@ def check_imports_resolve(index: ArtifactIndex):
         "when the assistant loads it.",
     fix="Re-save the entry point as UTF-8 and repair its YAML frontmatter fences.",
     effort="mechanical",
+    objective_basis="The bytes did not decode as UTF-8 or the YAML frontmatter did not parse; a "
+                    "file that cannot be read cannot be followed, whatever any specification "
+                    "says about it.",
 )
 def check_entrypoint_parses(index: ArtifactIndex):
     entrypoints = [a for a in index.artifacts if a.kind in _ENTRYPOINT_KINDS]
