@@ -92,7 +92,13 @@ def is_file_like(ref: str) -> bool:
     """
     if ref.endswith("/"):
         return True
-    return "." in ref.rsplit("/", 1)[-1]
+    name = ref.rsplit("/", 1)[-1]
+    if "." not in name:
+        return False
+    # ".ext" is the placeholder extension itself ("path/to/filename.ext",
+    # shown literally in a template table of file links) — no real file ever
+    # carries it, so a dot alone is not enough to call this file-like.
+    return name.rsplit(".", 1)[-1].lower() != "ext"
 
 
 def extract_references(body: str) -> list[str]:
