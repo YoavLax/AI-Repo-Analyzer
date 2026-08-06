@@ -356,7 +356,8 @@ def test_new_rules_are_registered():
 
 def test_every_skills_rule_carries_backfilled_metadata():
     skills_rules = [r for r in all_rules() if r.id.startswith("skills.")]
-    assert len(skills_rules) == 36  # 30 pre-existing + 7 additions - references.escape
+    # 30 pre-existing + 7 additions - references.escape - name.reserved
+    assert len(skills_rules) == 35
     for meta in skills_rules:
         assert meta.why, f"{meta.id} is missing why="
         assert meta.fix, f"{meta.id} is missing fix="

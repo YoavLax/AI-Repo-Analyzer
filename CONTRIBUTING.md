@@ -104,14 +104,20 @@ When adding a rule:
    this project traces back to a specific piece of documentation or a
    demonstrable failure mode. "Because it seems like good practice" is not
    sufficient justification on its own.
-   For a `SPEC`-sourced `error`, also paste the sentence into `spec_quote`.
-   The registry **enforces** this at import time, and the quote is published
-   in `docs/RULES.md` so a maintainer we report against can check us. Open
-   the page and copy the words; do not summarise from memory. If no sentence
-   states the requirement, the rule is not `SPEC`-sourced — decide what it
-   really is (`ADVISORY` at `warning`/`info`), or drop it.
+   **Every** `error` rule must additionally say what it rests on, in exactly
+   one of two fields — the registry **enforces** this at import time, and
+   both are published in `docs/RULES.md` so a maintainer we report against
+   can check us:
+   - `spec_quote` — the verbatim sentence from `doc_url`. Open the page and
+     copy the words; do not summarise from memory.
+   - `objective_basis` — for a check no specification needs to license
+     (JSON that does not parse, a credential-shaped literal, a file that
+     will not decode): one sentence on what makes the failure a fact rather
+     than a preference.
 
-   This gate exists because three rules failed it in production.
+   If neither can be written, it is not an `error`. Drop it to `warning`.
+
+   This gate exists because five rules failed it in production.
    `skills.references.escape` asserted that the Agent Skills spec required a
    skill to be self-contained and called a `../` link a CWE-59
    link-following vulnerability. The cited section says two things — "use
@@ -119,6 +125,17 @@ When adding a rule:
    deep from `SKILL.md`" — and neither is a prohibition. It ran at `error`,
    weight 6, and produced 533 findings across 35 repositories, every one of
    them advice to duplicate a deliberately shared file.
+
+   The first version of the gate covered `SPEC`-sourced errors only, which
+   was 18 of 31 and none of the population where the problem lived: the
+   `_ADVISORY_ERROR_ALLOWLIST` was a second door into `error` that asked for
+   nothing. `skills.name.reserved` came through it, failing any name
+   containing "claude" against a spec section with no reserved-word clause,
+   and fired on Anthropic's own `claude-api`.
+   `skills.description.person-voice` came through it telling authors to
+   write in the third person while the page it cites prescribes the
+   opposite in as many words.
+
 4. Add unit tests covering the pass case, the fail case, and (if the rule can
    be `None`) the not-applicable case.
 5. If the rule changes scores materially, add or update a fixture repo under
@@ -128,7 +145,15 @@ When adding a rule:
    `error` — the registry **enforces** this at import time; `error` is
    reserved for objective, spec-backed failure modes (see `plan.md` §13 and
    `_ADVISORY_ERROR_ALLOWLIST` in `registry.py`).
-7. Regenerate the catalog page: `airx rules --format md > docs/RULES.md`
+7. Decide from bytes and paths — the **scanned tree**, never the filesystem
+   around it. Beyond the usual no-clock/no-network/no-environment rules,
+   this also rules out file *metadata*. The executable bit is the trap:
+   `git clone` restores it and the clone-free ingest, which writes fetched
+   bytes with default permissions, cannot. A rule that consults it scores
+   one commit two ways depending on how the tree arrived —
+   `obra/superpowers` read 56.39 from a checkout and 56.47 from the API,
+   and the gap was three extensionless scripts.
+8. Regenerate the catalog page: `airx rules --format md > docs/RULES.md`
    (CI diffs it).
 
 ## Vendored code

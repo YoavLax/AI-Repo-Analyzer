@@ -24,7 +24,7 @@ from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, Platfo
 
 RuleResult = tuple[float, list[Diagnostic]] | None
 
-RULESET_VERSION = "0.4.0"
+RULESET_VERSION = "0.5.0"
 
 #: Effort classes for the remediation plan, cheapest first (plan-v2-fable.md §3.8).
 EFFORT_RANK: dict[str, int] = {
@@ -82,8 +82,13 @@ class RuleMeta:
     #: the argument rather than by setting a flag that could disagree with it.
     wants_index: bool = False
     #: The sentence at `doc_url` that establishes the requirement, verbatim.
-    #: Mandatory for SPEC-sourced ERROR rules — see `rule()`.
+    #: Every ERROR rule carries this or `objective_basis` — see `rule()`.
     spec_quote: str = ""
+    #: For an ERROR that needs no specification to license it (unparseable
+    #: JSON, a credential-shaped literal): one sentence on what makes the
+    #: failure a fact rather than a preference. Mutually exclusive with
+    #: `spec_quote`.
+    objective_basis: str = ""
 
 
 _REGISTRY: dict[str, RuleMeta] = {}
@@ -107,6 +112,7 @@ def rule(
     fix_by_platform: tuple[tuple[Platform, str], ...] = (),
     implies: tuple[str, ...] = (),
     spec_quote: str = "",
+    objective_basis: str = "",
 ):
     """Decorator that registers a rule function into the global registry.
 
@@ -119,16 +125,26 @@ def rule(
     exceptions (secret shapes, permission bypass, committed local files) are
     listed in `_ADVISORY_ERROR_ALLOWLIST`.
 
-    *Spec* rules must quote the sentence they rest on. `source=SPEC` was the
-    way around the first gate: set it, point `doc_url` at a plausible page, and
-    ship. `skills.references.escape` did exactly that — ERROR, weight 6,
-    `doc_url` at the spec's file-references section, asserting a
-    self-containment requirement and a CWE-59 vulnerability that section does
-    not mention. It produced 533 findings across 35 repositories before anyone
-    read the page. `spec_quote` makes the author paste the sentence, which is
-    an honest question ("which sentence?") that cannot be answered when there
-    isn't one. It is checked for existence here and read by a human in review;
-    the point is to force the lookup, not to verify prose automatically.
+    *Every* ERROR rule must then say what it rests on, in one of two fields.
+    `spec_quote` is the verbatim sentence from `doc_url` establishing the
+    requirement. `objective_basis` is for the checks no specification needs to
+    license — a credential-shaped literal, JSON that does not parse, a file
+    that cannot be decoded — and states in one sentence what makes the failure
+    a fact rather than a preference.
+
+    The first version of this gate covered `source=SPEC` only, which was 18 of
+    the 31 ERROR rules and none of the population where the problem actually
+    lived: `_ADVISORY_ERROR_ALLOWLIST` was a second door into ERROR that asked
+    for nothing at all. `skills.name.reserved` came through it — advisory,
+    ERROR, `doc_url` pointed at the spec's name-field section, which states
+    five name constraints and no reserved-word clause, and it fired on
+    Anthropic's own `claude-api` skill. `skills.description.person-voice` came
+    through it telling authors to write descriptions in the third person while
+    the page it cites prescribes the opposite in as many words.
+
+    Asking "which sentence?" is a question that cannot be answered when there
+    is no sentence. Both fields are checked for existence here and read by a
+    human in review; the point is to force the lookup, not to verify prose.
     """
 
     def _decorate(fn):
@@ -145,11 +161,19 @@ def rule(
                 f"rule {id}: advisory rules must not be ERROR severity "
                 f"(add to _ADVISORY_ERROR_ALLOWLIST only for objective checks)"
             )
-        if source == RuleSource.SPEC and severity == Severity.ERROR and not spec_quote.strip():
+        if severity == Severity.ERROR and not (spec_quote.strip() or objective_basis.strip()):
             raise ValueError(
-                f"rule {id}: a spec-sourced ERROR must carry spec_quote=, the verbatim "
-                f"sentence from {doc_url or 'its doc_url'} that states the requirement. "
-                f"If no such sentence exists, the rule is not spec-sourced."
+                f"rule {id}: an ERROR caps the grade, so it must say what it rests on. "
+                f"Either spec_quote=, the verbatim sentence from "
+                f"{doc_url or 'its doc_url'} that states the requirement, or "
+                f"objective_basis=, one sentence on what makes the failure a fact rather "
+                f"than a preference. If neither can be written, this is not an ERROR."
+            )
+        if spec_quote.strip() and objective_basis.strip():
+            raise ValueError(
+                f"rule {id}: give spec_quote= or objective_basis=, not both — "
+                f"a rule rests on a cited sentence or on an observable fact, and "
+                f"which one it is should be unambiguous in review."
             )
         _REGISTRY[id] = RuleMeta(
             id=id,
@@ -169,6 +193,7 @@ def rule(
             fix_by_platform=tuple(fix_by_platform),
             implies=tuple(implies),
             spec_quote=spec_quote.strip(),
+            objective_basis=objective_basis.strip(),
             wants_index=(
                 scope == RuleScope.SKILL
                 and len(inspect.signature(fn).parameters) == 2

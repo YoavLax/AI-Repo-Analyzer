@@ -164,7 +164,16 @@ def test_agents_unknown_fields_survives_non_string_keys(tmp_path):
     } or len(diags) == 2  # message wording may vary; the crash is the regression
 
 
-def test_second_person_voice_is_detected(tmp_path):
+def test_second_person_voice_is_not_a_defect(tmp_path):
+    """"Use this skill when..." IS the documented shape, so a second-person
+    variant of it must not be penalised.
+
+    The cited page says: 'Use imperative phrasing. Frame the description as an
+    instruction to the agent: "Use this skill when..." rather than "This skill
+    does..."' This rule used to fail the sentence below as an ERROR and tell
+    the author to rewrite it as "Reviews pull requests" — the exact "This skill
+    does..." shape the page argues against.
+    """
     skill_dir = tmp_path / "x"
     skill_dir.mkdir()
     path = skill_dir / "SKILL.md"
@@ -173,9 +182,7 @@ def test_second_person_voice_is_detected(tmp_path):
         encoding="utf-8",
     )
     from airx.parser import parse
-    sat, diags = skills_rules.check_description_person_voice(parse(path))
-    assert sat == 0.0
-    assert diags[0].severity == Severity.ERROR
+    assert skills_rules.check_description_person_voice(parse(path)) == (1.0, [])
 
 
 def test_third_person_with_bare_you_still_passes(tmp_path):

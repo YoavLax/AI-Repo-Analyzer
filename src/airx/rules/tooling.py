@@ -74,6 +74,8 @@ def check_mcp_present(index: ArtifactIndex):
     why="A malformed MCP config silently disables every server it declares.",
     fix="Make each MCP file valid JSON whose server entries declare 'command' (stdio) or 'url' (remote).",
     effort="mechanical",
+    objective_basis="The file is not parseable JSON, or a server entry declares neither "
+                    "`command` nor `url` and therefore names no transport to start on.",
 )
 def check_mcp_valid(index: ArtifactIndex):
     # Contents rule: only MCP files whose bytes are in this snapshot.
@@ -154,6 +156,8 @@ def _iter_env_literal_keys(data: Any) -> Iterator[str]:
     why="Credentials committed in MCP configs leak to everyone who clones the repository.",
     fix="Replace literal secrets with ${env:VAR} indirection and rotate any exposed credential.",
     effort="mechanical",
+    objective_basis="The MCP configuration holds a literal matching a published credential "
+                    "shape, committed to version control.",
 )
 def check_mcp_no_secrets(index: ArtifactIndex):
     if not index.mcp:

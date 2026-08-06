@@ -276,7 +276,14 @@ def _visible_files(root: Path) -> list[Path]:
     """Files under `root` that fs.scan would have recorded: no symlinks (files
     or ancestor dirs) and no excluded-dir components. Keeping rule input equal
     to the scanned tree preserves determinism guarantee D4/D9 — a repo whose
-    scan is identical must score identically."""
+    scan is identical must score identically.
+
+    The exclusion applies to directory components only, never the file name —
+    the same distinction `airx.ingest._safe_rel_path` draws. Testing every part
+    dropped `scripts/build`, because `build` is an excluded *directory* name,
+    while `fs.scan` keeps that file. This function's whole contract is to agree
+    with `fs.scan`, so it has to draw the line in the same place.
+    """
     try:
         candidates = sorted(root.rglob("*"), key=lambda p: p.as_posix())
     except OSError:
@@ -285,7 +292,7 @@ def _visible_files(root: Path) -> list[Path]:
     for p in candidates:
         try:
             rel_parts = p.relative_to(root).parts
-            if any(part in fs.DEFAULT_EXCLUDED_DIRS for part in rel_parts):
+            if any(part in fs.DEFAULT_EXCLUDED_DIRS for part in rel_parts[:-1]):
                 continue
             if any((root.joinpath(*rel_parts[:i + 1])).is_symlink() for i in range(len(rel_parts))):
                 continue
@@ -296,16 +303,59 @@ def _visible_files(root: Path) -> list[Path]:
     return out
 
 
+#: Extensions of files that could plausibly be invoked as a command. Anything
+#: else under `scripts/` is data the scripts read, not a script.
+_SCRIPT_SUFFIXES: frozenset[str] = frozenset({
+    ".py", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".js", ".mjs", ".cjs",
+    ".ts", ".rb", ".pl", ".php", ".lua", ".r", ".exs",
+})
+
+#: Python files that are never entry points. `__init__.py` marks a package,
+#: `conftest.py` configures pytest; neither is something an agent invokes.
+_NON_ENTRYPOINT_NAMES: frozenset[str] = frozenset({"__init__.py", "__main__.pyi", "conftest.py"})
+
+
+def _is_invocable(path: Path) -> bool:
+    """Whether `path` is something an agent could run, decided from the path
+    alone.
+
+    A `scripts/` directory holds more than scripts. anthropics/skills bundles
+    102 ISO/IEC-29500 `.xsd` schemas and 9 `__init__.py` package markers under
+    one, and asking an XML Schema for a `--help` surface produced 118 of the
+    158 findings AgentCompass reported against Anthropic's own repository.
+
+    An extensionless file under `scripts/` counts: that is what an executable
+    dropped on `PATH` looks like, and obra/superpowers ships three of them.
+
+    The executable bit deliberately plays no part. It is a property of the
+    filesystem rather than of the commit: `git clone` restores it, while the
+    clone-free ingest writes fetched bytes with default permissions and cannot.
+    Consulting it made obra/superpowers score 56.39 from a clone and 56.47 from
+    the same sha online — one commit, two answers, which is the whole of what
+    determinism contract D3 forbids.
+    """
+    if path.name in _NON_ENTRYPOINT_NAMES:
+        return False
+    if not path.suffix:
+        return True
+    return path.suffix.lower() in _SCRIPT_SUFFIXES
+
+
 def _script_files(doc: ParsedDocument) -> list[Path] | None:
-    """Scan-visible files under the `scripts/` directory next to SKILL.md,
-    sorted for determinism; `None` when no such directory."""
+    """Scan-visible, invocable files under the `scripts/` directory next to
+    SKILL.md, sorted for determinism; `None` when no such directory.
+
+    `None` and `[]` differ and the difference matters: no `scripts/` directory
+    means the scripts rules do not apply, while a `scripts/` directory holding
+    only data means they apply and pass.
+    """
     scripts_dir = doc.path.parent / "scripts"
     try:
         if scripts_dir.is_symlink() or not scripts_dir.is_dir():
             return None
     except OSError:
         return None
-    return _visible_files(scripts_dir)
+    return [p for p in _visible_files(scripts_dir) if _is_invocable(p)]
 
 
 def _read_text_defensively(path: Path) -> str | None:
@@ -345,6 +395,9 @@ def check_name_required(doc: ParsedDocument):
     why="YAML silently coerces unquoted values, so the loaded name differs from what was written.",
     fix="Quote the name value so YAML parses it as a string.",
     effort="mechanical",
+    objective_basis="A non-string value cannot satisfy a character-length or character-set "
+                    "constraint, so the field is malformed on its face rather than merely "
+                    "ill-advised.",
 )
 def check_name_type(doc: ParsedDocument):
     name = doc.frontmatter.get("name")
@@ -429,24 +482,17 @@ def check_name_hyphens(doc: ParsedDocument):
                              line=_field_line(doc.raw_text, "name"))]
 
 
-@rule(
-    id="skills.name.reserved", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
-    applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
-    source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#name-field",
-    summary="`name` does not contain the reserved words 'claude' or 'anthropic'.",
-    why="Names containing the reserved words 'claude' or 'anthropic' may be rejected by loaders.",
-    fix="Rename the skill so it does not contain the reserved word.",
-    effort="mechanical",
-)
-def check_name_reserved(doc: ParsedDocument):
-    name = doc.frontmatter.get("name")
-    if not isinstance(name, str) or not name:
-        return None
-    for word in ("anthropic", "claude"):
-        if word in name:
-            return 0.0, [Diagnostic(rule_id="skills.name.reserved", severity=Severity.ERROR,
-                                     message=f"Name contains reserved word '{word}': '{name}'.")]
-    return 1.0, []
+# `skills.name.reserved` was withdrawn here.
+#
+# It failed any skill whose name contained "claude" or "anthropic", as an ERROR
+# at advisory source, citing agentskills.io/specification#name-field. That
+# section states five constraints on `name` — 1-64 characters, lowercase
+# alphanumerics and hyphens, no leading or trailing hyphen, no consecutive
+# hyphens, must match the parent directory — and says nothing about reserved
+# words. The rule's own `why` conceded as much: names "may be rejected by
+# loaders" is a guess, and a guess is not what an ERROR is for.
+#
+# It fired on `claude-api`, in Anthropic's own skills repository, which loads.
 
 
 @rule(
@@ -542,6 +588,8 @@ def check_description_required(doc: ParsedDocument):
     why="YAML coercion turns an unquoted description into a non-string value the loader cannot use.",
     fix="Quote the description so YAML parses it as a string.",
     effort="mechanical",
+    objective_basis="A non-string value cannot satisfy a character-length constraint, so the "
+                    "field is malformed on its face rather than merely ill-advised.",
 )
 def check_description_type(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
@@ -597,13 +645,18 @@ def check_description_max_length(doc: ParsedDocument):
 
 @rule(
     id="skills.description.no-xml", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
-    applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
+    applicability=Applicability.QUALITY, weight=2, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/specification#description-field",
     summary="`description` contains no XML/HTML markup.",
     why="Markup in the description leaks into the agent's routing prompt as literal tags.",
     fix="Remove the XML/HTML tags from the description.",
     effort="mechanical",
 )
+# WARNING, not ERROR. The description-field section constrains the value to
+# 1-1024 non-empty characters and says nothing about markup, and the stated
+# consequence — tags leaking into a routing prompt — depends on how a given
+# client assembles that prompt, which is not observable from the repository.
+# A real concern, but not a fact about the file, so not a grade cap.
 def check_description_no_xml(doc: ParsedDocument):
     desc = doc.frontmatter.get("description")
     if not isinstance(desc, str) or not desc:
@@ -617,28 +670,46 @@ def check_description_no_xml(doc: ParsedDocument):
 
 @rule(
     id="skills.description.person-voice", pillar=Pillar.SKILLS, scope=RuleScope.SKILL,
-    applicability=Applicability.QUALITY, weight=3, severity=Severity.ERROR,
+    applicability=Applicability.QUALITY, weight=3, severity=Severity.WARNING,
     source=RuleSource.ADVISORY, doc_url="https://agentskills.io/skill-creation/optimizing-descriptions",
-    summary="`description` is written in third person, not first/second person.",
-    why="First/second-person voice confuses routing, which expects a third-person capability statement.",
-    fix="Rewrite the description in third person, e.g. 'Generates...' or 'Validates...'.",
+    summary="`description` speaks about the skill, not as the skill.",
+    why="A description narrated in the first person reads as the skill talking about itself "
+        "rather than telling the agent when to act on it.",
+    fix="Frame the description as an instruction to the agent, e.g. 'Use this skill when...', "
+        "rather than 'I can...'.",
     effort="authoring",
 )
 def check_description_person_voice(doc: ParsedDocument):
+    """First person only, at WARNING, and phrased the way the cited page is.
+
+    This rule used to be an ERROR that also failed second-person phrasing and
+    told authors, in its `fix` text, to "rewrite the description in third
+    person, e.g. 'Generates...'". The page in its own `doc_url` prescribes the
+    opposite in as many words:
+
+        Use imperative phrasing. Frame the description as an instruction to
+        the agent: "Use this skill when..." rather than "This skill does..."
+        The agent is deciding whether to act, so tell it when to act.
+
+    So the remediation advice pointed authors away from the documented shape,
+    the second-person branch penalised phrasings a step removed from the one
+    the page recommends, and the whole thing ran at a severity that caps the
+    grade. It fired twice on anthropics/skills.
+
+    What is left is narrow and honest: a description written as "I can convert
+    PDFs" is the skill talking about itself, which nothing recommends and which
+    no page forbids either — hence WARNING, and hence advice that now matches
+    the authority instead of contradicting it.
+    """
     desc = doc.frontmatter.get("description")
     if not isinstance(desc, str) or not desc:
         return None
     m = _FIRST_PERSON_RE.search(desc)
     if m:
-        return 0.0, [Diagnostic(rule_id="skills.description.person-voice", severity=Severity.ERROR,
-                                 message=f"Description uses first-person voice ('{m.group().strip()}'). "
-                                         f"Use third person, e.g. 'Generates...' or 'Validates...'.")]
-    for m in _SECOND_PERSON_RE.finditer(desc):
-        if _TRIGGER_CLAUSE_YOU_RE.search(desc[:m.start()]):
-            continue
-        return 0.0, [Diagnostic(rule_id="skills.description.person-voice", severity=Severity.ERROR,
-                                 message=f"Description uses second-person voice ('{m.group()}'). "
-                                         f"Use third person, e.g. 'Generates...' or 'Validates...'.")]
+        return 0.0, [Diagnostic(rule_id="skills.description.person-voice", severity=Severity.WARNING,
+                                 message=f"Description is narrated in the first person "
+                                         f"('{m.group().strip()}'); frame it as an instruction to "
+                                         f"the agent, e.g. 'Use this skill when...'.")]
     return 1.0, []
 
 
@@ -1056,6 +1127,8 @@ def check_scripts_help(doc: ParsedDocument):
     why="A referenced file that does not exist sends the agent on a failing detour at load time.",
     fix="Fix the reference path or add the missing file.",
     effort="mechanical",
+    objective_basis="The referenced path is absent from the repository listing at the scanned "
+                    "commit. Existence in a tree is a fact about the tree.",
 )
 def check_references_resolve(doc: ParsedDocument, index: ArtifactIndex):
     """Existence check for body references, answered from the file listing.
