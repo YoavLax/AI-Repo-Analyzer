@@ -241,7 +241,7 @@ def rules(fmt: str) -> None:
                 "severity": m.severity.value, "source": m.source.value,
                 "platforms": [p.value for p in m.platforms], "effort": m.effort,
                 "summary": m.summary, "why": m.why or None, "fix": m.fix or None,
-                "doc_url": m.doc_url,
+                "doc_url": m.doc_url, "spec_quote": m.spec_quote or None,
             }
             for m in catalog
         ], indent=2))
@@ -269,6 +269,22 @@ def rules(fmt: str) -> None:
                     f"| `{m.id}` | {m.applicability.value} | {m.weight} | {m.severity.value} "
                     f"| {m.source.value} | {platforms} | {m.summary} |"
                 )
+        cited = [m for m in catalog if m.spec_quote]
+        if cited:
+            lines.extend([
+                "",
+                "## Spec citations",
+                "",
+                "Every spec-sourced `error` rule names the sentence it rests on. An error "
+                "caps the grade, so the claim behind one has to be quotable rather than "
+                "merely plausible — if no sentence says it, the rule is not spec-sourced.",
+                "",
+                "| ID | Source sentence | Document |",
+                "|---|---|---|",
+            ])
+            for m in cited:
+                quote = m.spec_quote.replace("|", "\\|")
+                lines.append(f"| `{m.id}` | {quote} | [{m.doc_url}]({m.doc_url}) |")
         click.echo("\n".join(lines))
         return
 

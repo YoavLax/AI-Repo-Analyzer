@@ -24,7 +24,7 @@ from airx.model import Applicability, Diagnostic, ParsedDocument, Pillar, Platfo
 
 RuleResult = tuple[float, list[Diagnostic]] | None
 
-RULESET_VERSION = "0.3.1"
+RULESET_VERSION = "0.4.0"
 
 #: Effort classes for the remediation plan, cheapest first (plan-v2-fable.md §3.8).
 EFFORT_RANK: dict[str, int] = {
@@ -81,6 +81,9 @@ class RuleMeta:
     #: the signature at registration, so a rule opts in simply by asking for
     #: the argument rather than by setting a flag that could disagree with it.
     wants_index: bool = False
+    #: The sentence at `doc_url` that establishes the requirement, verbatim.
+    #: Mandatory for SPEC-sourced ERROR rules — see `rule()`.
+    spec_quote: str = ""
 
 
 _REGISTRY: dict[str, RuleMeta] = {}
@@ -103,13 +106,29 @@ def rule(
     effort: str = "authoring",
     fix_by_platform: tuple[tuple[Platform, str], ...] = (),
     implies: tuple[str, ...] = (),
+    spec_quote: str = "",
 ):
     """Decorator that registers a rule function into the global registry.
 
-    Advisory-source rules must not carry ERROR severity (plan-v2-fable.md §0.3):
-    only objective, spec-verifiable failures may trigger the grade cap. The
-    narrow exceptions (secret shapes, permission bypass, committed local files)
-    are listed in `_ADVISORY_ERROR_ALLOWLIST`.
+    Two gates stand between a rule and ERROR severity, because an ERROR caps
+    the grade and is the strongest thing this tool says about someone's
+    repository.
+
+    *Advisory* rules must not be ERROR at all (plan-v2-fable.md §0.3): only
+    objective, spec-verifiable failures may trigger the cap. The narrow
+    exceptions (secret shapes, permission bypass, committed local files) are
+    listed in `_ADVISORY_ERROR_ALLOWLIST`.
+
+    *Spec* rules must quote the sentence they rest on. `source=SPEC` was the
+    way around the first gate: set it, point `doc_url` at a plausible page, and
+    ship. `skills.references.escape` did exactly that — ERROR, weight 6,
+    `doc_url` at the spec's file-references section, asserting a
+    self-containment requirement and a CWE-59 vulnerability that section does
+    not mention. It produced 533 findings across 35 repositories before anyone
+    read the page. `spec_quote` makes the author paste the sentence, which is
+    an honest question ("which sentence?") that cannot be answered when there
+    isn't one. It is checked for existence here and read by a human in review;
+    the point is to force the lookup, not to verify prose automatically.
     """
 
     def _decorate(fn):
@@ -125,6 +144,12 @@ def rule(
             raise ValueError(
                 f"rule {id}: advisory rules must not be ERROR severity "
                 f"(add to _ADVISORY_ERROR_ALLOWLIST only for objective checks)"
+            )
+        if source == RuleSource.SPEC and severity == Severity.ERROR and not spec_quote.strip():
+            raise ValueError(
+                f"rule {id}: a spec-sourced ERROR must carry spec_quote=, the verbatim "
+                f"sentence from {doc_url or 'its doc_url'} that states the requirement. "
+                f"If no such sentence exists, the rule is not spec-sourced."
             )
         _REGISTRY[id] = RuleMeta(
             id=id,
@@ -143,6 +168,7 @@ def rule(
             effort=effort,
             fix_by_platform=tuple(fix_by_platform),
             implies=tuple(implies),
+            spec_quote=spec_quote.strip(),
             wants_index=(
                 scope == RuleScope.SKILL
                 and len(inspect.signature(fn).parameters) == 2
@@ -158,13 +184,14 @@ def rule(
 #: file, a broken reference) rather than a stylistic heuristic.
 _ADVISORY_ERROR_ALLOWLIST: frozenset[str] = frozenset({
     "foundation.entrypoint.present",
+    "foundation.entrypoint.parses",
+    "tooling.mcp.valid",
     "skills.name.type",
     "skills.name.reserved",
     "skills.description.type",
     "skills.description.no-xml",
     "skills.description.person-voice",
     "skills.references.resolve",
-    "skills.references.escape",
     "safety.permissions.no-bypass",
     "safety.settings.no-secrets",
     "safety.artifacts.no-secrets",

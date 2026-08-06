@@ -49,6 +49,7 @@ _BYPASS_KEY = "dangerouslySkipPermissions"
     why="Local settings files are personal, machine-specific configuration; committing them leaks local setup into every clone.",
     fix="Remove CLAUDE.local.md / .claude/settings.local.json from version control and add them to .gitignore.",
     effort="mechanical",
+    spec_quote="Add `CLAUDE.local.md` to your `.gitignore` so it isn't committed.",
 )
 def check_local_files_not_committed(index: ArtifactIndex):
     """Always applicable: passes trivially when no local file is in the tree."""
@@ -217,13 +218,28 @@ def check_permissions_least_privilege(index: ArtifactIndex):
     applicability=Applicability.QUALITY, weight=4, severity=Severity.ERROR,
     source=RuleSource.SPEC,
     doc_url="https://code.claude.com/docs/en/settings",
-    summary=".claude/settings.json parses as JSON and uses only known top-level keys.",
+    summary=".claude/settings.json parses as JSON with a top-level object.",
     platforms=_CLAUDE_ONLY,
-    why="A malformed settings file or unknown keys are silently ignored, so the configuration does not do what its authors think.",
-    fix="Fix the JSON syntax and remove or correct unknown top-level keys in .claude/settings.json.",
+    why="A settings file that is not valid JSON does not load at all, so none of its configuration takes effect.",
+    fix="Fix the JSON syntax in .claude/settings.json so the file parses as an object.",
     effort="mechanical",
+    spec_quote="The `settings.json` file is the official mechanism for configuring Claude Code "
+               "through hierarchical settings ... `.claude/settings.json` for settings that are "
+               "checked into source control and shared with your team",
 )
 def check_settings_valid(index: ArtifactIndex):
+    """Parseability only.
+
+    Unknown top-level keys used to fail here as ERRORs too, which cannot be
+    supported: the settings reference documents well over a hundred keys and
+    gains more every release, so `KNOWN_CLAUDE_SETTINGS_KEYS` is a snapshot
+    that goes stale by design — a repository pinned to a newer Claude Code than
+    our last research pass got an ERROR, and an ERROR caps the grade. The page
+    never says an unrecognized key is a failure, and this rule's own `why` used
+    to concede the keys are "silently ignored", which is an argument against
+    ERROR rather than for it. That check now lives in
+    `safety.settings.known-keys` at INFO.
+    """
     settings = index.claude_settings
     if settings is None or settings.not_analyzed:
         return None  # N/A: no committed settings file, or its bytes went unread
@@ -237,21 +253,42 @@ def check_settings_valid(index: ArtifactIndex):
             rule_id="safety.settings.valid", severity=Severity.ERROR,
             message=".claude/settings.json must contain a top-level JSON object.",
         ))]
+    return 1.0, []
+
+
+@rule(
+    id="safety.settings.known-keys", pillar=Pillar.SAFETY, scope=RuleScope.REPO,
+    applicability=Applicability.QUALITY, weight=1, severity=Severity.INFO,
+    source=RuleSource.ADVISORY,
+    doc_url="https://code.claude.com/docs/en/settings#available-settings",
+    summary="Top-level keys in .claude/settings.json appear in the settings reference.",
+    platforms=_CLAUDE_ONLY,
+    why="A key Claude Code does not recognize is ignored, so the setting it was meant to apply never takes effect.",
+    fix="Check the key against the settings reference; a typo is worth fixing, a key newer than this catalog is not.",
+    effort="mechanical",
+)
+def check_settings_known_keys(index: ArtifactIndex):
+    """Advisory, INFO, weight 1: the catalog it checks against is a snapshot of
+    a page that grows every release, so a miss here is at least as likely to be
+    our staleness as the repository's mistake. Worth surfacing as a typo hint;
+    never worth capping a grade over."""
+    settings = index.claude_settings
+    if settings is None or not isinstance(settings.json_data, dict):
+        return None  # N/A: nothing parseable to inspect
     unknown = sorted(
         str(k) for k in settings.json_data
         if str(k) not in config.KNOWN_CLAUDE_SETTINGS_KEYS
     )
     if not unknown:
         return 1.0, []
-    diags: list[tuple[PurePosixPath, Diagnostic]] = []
-    for key in unknown:
-        # ERROR, not WARNING: this rule's meta severity is ERROR, and a rule
-        # that fails with only sub-ERROR diagnostics would trip the grade cap
-        # and --fail-on error while rendering zero error findings to fix.
-        diags.append((settings.rel_path, Diagnostic(
-            rule_id="safety.settings.valid", severity=Severity.ERROR,
-            message=f"Unknown top-level settings key '{key}' — Claude Code ignores it silently.",
-        )))
+    diags: list[tuple[PurePosixPath, Diagnostic]] = [
+        (settings.rel_path, Diagnostic(
+            rule_id="safety.settings.known-keys", severity=Severity.INFO,
+            message=f"Top-level settings key '{key}' is not in the documented settings "
+                    f"reference; if it is not a typo, it may be newer than this catalog.",
+        ))
+        for key in unknown
+    ]
     return 0.0, diags
 
 

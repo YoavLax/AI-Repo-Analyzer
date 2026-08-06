@@ -48,8 +48,17 @@ def _is_prompt_file(rel: PurePosixPath) -> bool:
     )
 
 
+#: Markdown files that live in an agents directory but are documentation about
+#: the agents rather than agent definitions. Claude Code would fail to load
+#: them, but "add name and description frontmatter to your README" is advice no
+#: maintainer should take, and an ERROR is what we would be giving it.
+_AGENT_DIR_DOC_FILENAMES: frozenset[str] = frozenset({"README.md", "readme.md"})
+
+
 def _is_agent_file(rel: PurePosixPath) -> bool:
     if rel.suffix != ".md" or len(rel.parts) < 3:
+        return False
+    if rel.name in _AGENT_DIR_DOC_FILENAMES:
         return False
     return (rel.parts[0] == ".github" and rel.parts[1] == "agents") or (
         rel.parts[0] == ".claude" and rel.parts[1] == "agents"

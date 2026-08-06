@@ -140,6 +140,7 @@ def check_commands_present(index: ArtifactIndex):
     fix="Add a YAML frontmatter block (---) with at least name and description to each agent file.",
     effort="additive",
     summary="Every agent file has non-empty YAML frontmatter.",
+    spec_quote="Subagents are Markdown files with YAML frontmatter.",
 )
 def check_agents_frontmatter_present(index: ArtifactIndex):
     # Contents rule: judge only the agent files this snapshot actually read.
@@ -175,6 +176,7 @@ def check_agents_frontmatter_present(index: ArtifactIndex):
     fix="Add a non-empty `name:` field to each .claude/agents/*.md frontmatter.",
     effort="mechanical",
     summary="Every .claude/agents/ file declares a non-empty string `name`.",
+    spec_quote="The following fields can be used in the YAML frontmatter. Only `name` and `description` are required.",
 )
 def check_agents_name_required(index: ArtifactIndex):
     claude_agents = [
@@ -205,6 +207,7 @@ def check_agents_name_required(index: ArtifactIndex):
     fix="Add a non-empty `description:` field describing what the agent does and when to use it.",
     effort="authoring",
     summary="Every agent file declares a non-empty string `description`.",
+    spec_quote="The following fields can be used in the YAML frontmatter. Only `name` and `description` are required.",
 )
 def check_agents_description_required(index: ArtifactIndex):
     agents = _agent_docs(index)

@@ -297,11 +297,29 @@ def check_sections_coverage(index: ArtifactIndex):
     fix="Correct or remove each @path import in CLAUDE.md so it points at an existing file "
         "inside the repository.",
     effort="mechanical",
+    spec_quote="CLAUDE.md files can import additional files using `@path/to/import` syntax. Imported files are expanded and loaded into context at launch alongside the CLAUDE.md that references them.",
 )
 def check_imports_resolve(index: ArtifactIndex):
+    """Broken `@path` imports in CLAUDE.md, matched the way Claude Code matches
+    them.
+
+    Two things keep this from firing on text that is not an import at all:
+
+    * Code is stripped first. "Import parsing skips Markdown code spans and
+      fenced code blocks. To mention a path in your CLAUDE.md without importing
+      it, wrap it in backticks" (code.claude.com/docs/en/memory). Without this,
+      a `@pytest.mark.parametrize` inside a fenced example was an ERROR.
+    * A token has to look like a path. `@alice` in prose and `@README` as an
+      import are the same five characters plus an at-sign; a credit for the
+      handle costs nothing, while an error on it is an accusation we cannot
+      support. Only tokens carrying a `/` or a `.` are judged.
+    """
     if index.claude_md is None:
         return None
-    tokens = sorted(set(_IMPORT_RE.findall(index.claude_md.raw_text)))
+    tokens = sorted({
+        t for t in _IMPORT_RE.findall(md.strip_code(index.claude_md.raw_text))
+        if "/" in t or "." in t
+    })
     if not tokens:
         return None
     # Membership in the scanned snapshot, not a live filesystem probe: the
@@ -328,7 +346,7 @@ def check_imports_resolve(index: ArtifactIndex):
 @rule(
     id="foundation.entrypoint.parses", pillar=Pillar.FOUNDATION, scope=RuleScope.REPO,
     applicability=Applicability.QUALITY, weight=2, severity=Severity.ERROR,
-    source=RuleSource.SPEC,
+    source=RuleSource.ADVISORY,  # allowlisted: bytes that do not decode or parse
     doc_url="https://code.visualstudio.com/docs/copilot/customization/custom-instructions",
     summary="Entry-point files decode as UTF-8 and any YAML frontmatter parses.",
     why="An entry point that fails to decode or parse is silently dropped or garbled "

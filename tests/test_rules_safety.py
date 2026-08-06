@@ -277,17 +277,26 @@ def test_settings_valid_zero_on_non_object(tmp_path):
     assert diags[0][1].severity == Severity.ERROR
 
 
-def test_settings_valid_flags_unknown_keys_as_errors(tmp_path):
+def test_settings_valid_ignores_unknown_keys(tmp_path):
+    """Parseability is the whole of this rule. An unrecognized key is reported
+    by `safety.settings.known-keys` at INFO, because the catalog it is checked
+    against is a snapshot of a page that grows with every Claude Code release —
+    a stale catalog must not cap somebody's grade."""
     index = _repo(tmp_path, {
         ".claude/settings.json": '{"env": {}, "notAKey": 1, "alsoBad": 2}\n',
     })
-    sat, diags = safety.check_settings_valid(index)
+    assert safety.check_settings_valid(index) == (1.0, [])
+
+
+def test_settings_known_keys_reports_unknown_keys_at_info(tmp_path):
+    index = _repo(tmp_path, {
+        ".claude/settings.json": '{"env": {}, "notAKey": 1, "alsoBad": 2}\n',
+    })
+    sat, diags = safety.check_settings_known_keys(index)
     assert sat == 0.0
     assert [d.message for _, d in diags] == sorted(d.message for _, d in diags)
     assert len(diags) == 2
-    # ERROR diagnostics: the rule's meta severity is ERROR, and a failing
-    # ERROR rule must render error findings for the gate it trips.
-    assert all(d.severity == Severity.ERROR for _, d in diags)
+    assert all(d.severity == Severity.INFO for _, d in diags)
     assert "alsoBad" in diags[0][1].message
     assert "notAKey" in diags[1][1].message
 

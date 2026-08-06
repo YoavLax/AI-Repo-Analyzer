@@ -125,7 +125,10 @@ def test_no_xml_still_flags_real_markup(tmp_path):
     assert "<b>" in diags[0].message
 
 
-def test_references_resolve_flags_broken_and_escaping(tmp_path):
+def test_references_resolve_flags_broken_but_not_out_of_tree(tmp_path):
+    """One diagnostic, not two. `scripts/missing.sh` is inside the scanned tree
+    and absent from it, which is a fact; `../../outside.txt` leaves the tree
+    entirely, so the listing has nothing to say about it either way."""
     doc = _doc(
         tmp_path, "refs",
         "name: refs\ndescription: Uses references. Use this skill when the user asks to test references.",
@@ -133,7 +136,8 @@ def test_references_resolve_flags_broken_and_escaping(tmp_path):
     )
     sat, diags = rules.check_references_resolve(doc, _index(tmp_path))
     assert sat == 0.0
-    assert len(diags) == 2
+    assert len(diags) == 1
+    assert "scripts/missing.sh" in diags[0].message
 
 
 def test_references_resolve_not_applicable_when_no_refs(tmp_path):
